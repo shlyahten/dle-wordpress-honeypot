@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="utf-8"?>
+<dleplugin>
+	<name>WordPress Honeypot &amp; Threat Intelligence</name>
+	<description>Комплексная ловушка для ботов и сканеров, мимикрия под WordPress 6.x, перехват учетных данных брутфорса, защита gzip-бомбой и управление в панели администратора DLE.</description>
+	<icon>fa fa-shield</icon>
+	<version>1.0.0</version>
+	<dleversion>21.0</dleversion>
+	<versioncompare>greater</versioncompare>
+	<upgradeurl></upgradeurl>
+	<filelist></filelist>
+	<mysqlinstall><![CDATA[INSERT INTO `{prefix}_admin_sections` (`name`, `title`, `descr`, `icon`, `allow_groups`) VALUES ('honeypot', 'WordPress Honeypot', 'Ловушка для сканеров и ботов, перехват брутфорса и статистика атак', 'fa fa-shield', '1') ON DUPLICATE KEY UPDATE `title`=VALUES(`title`);]]></mysqlinstall>
+	<mysqlupgrade><![CDATA[]]></mysqlupgrade>
+	<mysqlenable><![CDATA[]]></mysqlenable>
+	<mysqldisable><![CDATA[]]></mysqldisable>
+	<mysqldelete><![CDATA[DELETE FROM `{prefix}_admin_sections` WHERE `name` = 'honeypot';]]></mysqldelete>
+	<phpinstall><![CDATA[
+$configFile = ENGINE_DIR . '/data/honeypot_config.json';
+if (!file_exists($configFile)) {
+    $defaultConfig = [
+        'mode' => 'hybrid',
+        'tarpit_seconds' => 15,
+        'log_enabled' => true,
+    ];
+    @file_put_contents($configFile, json_encode($defaultConfig, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE), LOCK_EX);
+}
+]]></phpinstall>
+	<phpupgrade><![CDATA[]]></phpupgrade>
+	<phpenable><![CDATA[]]></phpenable>
+	<phpdisable><![CDATA[]]></phpdisable>
+	<phpdelete><![CDATA[]]></phpdelete>
+	<notice><![CDATA[Модуль WordPress Honeypot успешно установлен! Раздел доступен в панели управления в меню "WordPress Honeypot" или по адресу admin.php?mod=honeypot.]]></notice>
+	<instructions><![CDATA[<h3>WordPress Honeypot &amp; Threat Intelligence</h3><p>Модуль перехватывает атаки ботов, имитируя WordPress 6.x. Журнал атак, собранные пароли ботов и управление режимами доступны в панели управления DLE в разделе <b>WordPress Honeypot</b>.</p>]]></instructions>
+	<mnotice><![CDATA[]]></mnotice>
+	<file name="engine/init.php">
+		<operation action="after">
+			<searchcode><![CDATA[require_once (DLEPlugins::Check(ENGINE_DIR . '/modules/functions.php'));]]></searchcode>
+			<readcode><![CDATA[// WordPress Honeypot Virtual Route Interceptor
+if (isset($_SERVER['REQUEST_URI'])) {
+    $honeypotUri = $_SERVER['REQUEST_URI'];
+    if (strpos($honeypotUri, '/wp-json/wp/v2/users') !== false) {
+        require_once DLEPlugins::Check(ENGINE_DIR . '/modules/honeypot.php');
+        SiteHoneypot::logAttack('WP_REST_ENUM', ['action' => 'FAKE_JSON_USERS']);
+        header('Content-Type: application/json; charset=UTF-8');
+        echo json_encode([['id' => 1, 'name' => 'admin', 'slug' => 'admin']]);
+        exit;
+    }
+}]]></readcode>
+		</operation>
+	</file>
+</dleplugin>

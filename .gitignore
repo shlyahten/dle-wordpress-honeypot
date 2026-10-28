@@ -1,0 +1,7 @@
+# DLE Honeypot Gitignore
+.DS_Store
+Thumbs.db
+*.log
+*.tmp
+.idea/
+.vscode/
