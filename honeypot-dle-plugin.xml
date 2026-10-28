@@ -3,7 +3,7 @@
 	<name>WordPress Honeypot &amp; Threat Intelligence</name>
 	<description>Комплексная ловушка для ботов и сканеров, мимикрия под WordPress 6.x, перехват учетных данных брутфорса, защита gzip-бомбой и управление в панели администратора DLE.</description>
 	<icon>public/adminpanel/images/honeypot.png</icon>
-	<version>1.0.0</version>
+	<version>1.1.0</version>
 	<dleversion>21.0</dleversion>
 	<versioncompare>greater</versioncompare>
 	<upgradeurl>https://shlyahten.github.io/dle-wordpress-honeypot/version.json</upgradeurl>
