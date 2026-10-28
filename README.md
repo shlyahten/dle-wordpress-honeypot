@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="logo.png" width="180" alt="WordPress Honeypot for DLE Logo">
+</p>
+
 # WordPress Honeypot & Threat Intelligence for DataLife Engine (DLE 14 - 21+)
 
 [![DLE Compatibility](https://img.shields.io/badge/DLE-14.x--21.x-brightgreen.svg)](https://dle-news.ru/)
