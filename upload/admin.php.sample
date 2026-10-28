@@ -1,0 +1,25 @@
+<?php
+/*
+=====================================================
+ DataLife Engine - Admin Decoy & Honeypot Trap
+-----------------------------------------------------
+ Use: Traps bots and automated scanners probing for
+ default /admin.php on sites where the real admin
+ panel has been renamed (e.g. secret_admin.php).
+-----------------------------------------------------
+ Safety: If the real admin panel has not been renamed,
+ this decoy will automatically refuse to execute.
+=====================================================
+*/
+
+@include_once __DIR__ . '/engine/data/config.php';
+
+// Failsafe: only activate trap if real admin path is renamed
+if (isset($config['admin_path']) && $config['admin_path'] !== 'admin.php' && file_exists(__DIR__ . '/' . $config['admin_path'])) {
+    require_once __DIR__ . '/engine/modules/honeypot.php';
+    SiteHoneypot::handle('dle-admin');
+} else {
+    http_response_code(404);
+    echo "404 Not Found";
+    exit;
+}

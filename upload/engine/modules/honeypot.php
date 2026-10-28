@@ -511,6 +511,163 @@ HTML;
     }
 
     /**
+     * Render authentic DataLife Engine Admin Login Page (/admin.php decoy)
+     */
+    public static function renderDleAdminForm(?string $errorMessage = null): void
+    {
+        $year = date('Y');
+        $errorHtml = '';
+        if ($errorMessage) {
+            $safeError = htmlspecialchars($errorMessage, ENT_QUOTES, 'UTF-8');
+            $errorHtml = <<<HTML
+            <div class="form-group">
+                <div class="alert alert-danger alert-styled-left alert-arrow-left alert-component">{$safeError}</div>
+            </div>
+HTML;
+        }
+
+        header("Content-Type: text/html; charset=UTF-8");
+        header("X-Robots-Tag: noindex, nofollow");
+
+        echo <<<HTML
+<!doctype html>
+<html lang="ru" dir="ltr">
+<head>
+	<meta charset="utf-8">
+	<title>DataLife Engine - Панель управления</title>
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<meta name="robots" content="noindex, nofollow">
+	<link rel="icon" type="image/png" href="public/adminpanel/images/favicon-96x96.png" sizes="96x96">
+	<link rel="icon" type="image/svg+xml" href="public/adminpanel/images/favicon.svg">
+	<link rel="shortcut icon" href="public/adminpanel/images/favicon.ico">
+	<link rel="stylesheet" href="public/fonts/fontawesome/styles.min.css" type="text/css">
+	<link rel="stylesheet" href="public/adminpanel/stylesheets/application.css" type="text/css">
+	<style>
+		body.no-theme { background: #f5f5f5; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; }
+		.page-container { max-width: 440px; margin: 80px auto; padding: 0 15px; }
+		.panel { background: #fff; border-radius: 4px; box-shadow: 0 1px 3px rgba(0,0,0,.12), 0 1px 2px rgba(0,0,0,.24); border: 1px solid #e0e0e0; margin-bottom: 20px; }
+		.panel-heading { padding: 18px 20px; font-size: 16px; font-weight: 500; border-bottom: 1px solid #eee; background: #fafafa; border-radius: 4px 4px 0 0; color: #333; }
+		.panel-body { padding: 20px; }
+		.form-group { margin-bottom: 15px; position: relative; }
+		.form-control { width: 100%; height: 38px; padding: 8px 12px 8px 36px; font-size: 14px; border: 1px solid #ddd; border-radius: 3px; box-sizing: border-box; }
+		.form-control:focus { border-color: #2196F3; outline: none; }
+		.form-control-feedback { position: absolute; top: 10px; left: 12px; color: #999; font-size: 14px; }
+		.btn-primary { width: 100%; background: #2196F3; color: #fff; border: none; padding: 10px 16px; font-size: 14px; font-weight: 500; border-radius: 3px; cursor: pointer; }
+		.btn-primary:hover { background: #1e88e5; }
+		.checkbox { margin: 10px 0; font-size: 13px; color: #666; }
+		.alert-danger { background: #FFEBEE; color: #C62828; padding: 10px 15px; border-radius: 3px; margin-bottom: 15px; font-size: 13px; border-left: 4px solid #D32F2F; }
+		.text-muted { color: #888; font-size: 12px; text-align: center; }
+		.text-right { text-align: right; margin-top: 10px; }
+		.status-info { color: #2196F3; text-decoration: none; font-size: 13px; }
+		.status-info:hover { text-decoration: underline; }
+	</style>
+</head>
+<body class="no-theme">
+<div class="page-container">
+	<div class="panel">
+		<div class="panel-heading">
+			Панель управления DataLife Engine
+		</div>
+		<div class="panel-body">
+			<form name="login" action="/admin.php" method="post" class="separate-sections">
+				<input type="hidden" name="subaction" value="dologin">
+				{$errorHtml}
+				<div class="form-group">
+					<div class="form-control-feedback"><i class="fa fa-user"></i></div>
+					<input class="form-control" type="text" name="username" placeholder="Имя пользователя или e-mail" autofocus required autocomplete="username">
+				</div>
+				<div class="form-group">
+					<div class="form-control-feedback"><i class="fa fa-lock"></i></div>
+					<input class="form-control" type="password" name="password" placeholder="Пароль" required autocomplete="current-password">
+				</div>
+				<div class="form-group">
+					<div class="checkbox">
+						<label><input type="checkbox" name="login_not_save" value="1"> Чужой компьютер</label>
+					</div>
+				</div>
+				<div class="form-group">
+					<button type="submit" class="btn btn-primary">Войти <i class="fa fa-sign-in"></i></button>
+				</div>
+			</form>
+			<div class="text-right">
+				<a href="?mod=lostpassword" class="status-info">Забыли пароль?</a>
+			</div>
+		</div>
+	</div>
+	<div class="text-muted">
+		DataLife Engine&reg; Copyright 2004-{$year}<br>&copy; <a href="https://dle-news.ru/" target="_blank" style="color:#888;">SoftNews Media Group</a> All rights reserved.
+	</div>
+</div>
+</body>
+</html>
+HTML;
+        exit;
+    }
+
+    /**
+     * Check if DLE admin decoy trap (/admin.php) is active on disk
+     */
+    public static function isDleAdminTrapActive(): bool
+    {
+        $root = dirname(__DIR__, 2);
+        $adminFile = $root . '/admin.php';
+        if (!file_exists($adminFile)) {
+            return false;
+        }
+        $content = @file_get_contents($adminFile);
+        return $content !== false && strpos($content, 'SiteHoneypot') !== false;
+    }
+
+    /**
+     * Safely toggle the /admin.php DLE decoy trap on disk
+     */
+    public static function toggleDleAdminTrap(bool $enable): bool
+    {
+        $root = dirname(__DIR__, 2);
+        $adminFile = $root . '/admin.php';
+        $dleConfigFile = dirname(__DIR__) . '/data/config.php';
+
+        $dleConfig = [];
+        if (file_exists($dleConfigFile)) {
+            $config = [];
+            @include $dleConfigFile;
+            $dleConfig = $config;
+        }
+        $adminPath = $dleConfig['admin_path'] ?? 'admin.php';
+
+        if ($enable) {
+            // Failsafe: Cannot enable if admin_path is still default admin.php
+            if ($adminPath === 'admin.php' || empty($adminPath)) {
+                return false;
+            }
+            // Failsafe: Cannot enable if renamed real admin file does not exist
+            if (!file_exists($root . '/' . $adminPath)) {
+                return false;
+            }
+
+            $code = "<?php\n/*\n=====================================================\n DataLife Engine - Admin Decoy & Honeypot Trap\n Catches bots scanning for default admin.php\n=====================================================\n*/\n@include_once __DIR__ . '/engine/data/config.php';\nif (isset(\$config['admin_path']) && \$config['admin_path'] !== 'admin.php') {\n    require_once __DIR__ . '/engine/modules/honeypot.php';\n    SiteHoneypot::handle('dle-admin');\n} else {\n    http_response_code(404);\n    echo \"404 Not Found\";\n    exit;\n}\n";
+            @file_put_contents($adminFile, $code, LOCK_EX);
+
+            $conf = self::getConfig();
+            $conf['dle_admin_trap'] = true;
+            self::saveConfig($conf);
+            return true;
+        } else {
+            // Disable: only unlink if file contains our SiteHoneypot signature
+            if (file_exists($adminFile)) {
+                $content = @file_get_contents($adminFile);
+                if ($content !== false && strpos($content, 'SiteHoneypot') !== false) {
+                    @unlink($adminFile);
+                }
+            }
+            $conf = self::getConfig();
+            $conf['dle_admin_trap'] = false;
+            self::saveConfig($conf);
+            return true;
+        }
+    }
+
+    /**
      * Handle WordPress XML-RPC endpoint (/xmlrpc.php)
      */
     public static function handleXMLRPC(): void
@@ -662,6 +819,61 @@ XML;
                 // Deception fallback: show authentic WP error
                 $errorMsg = 'ОШИБКА: Неверное имя пользователя или пароль. Потеряли пароль?';
                 self::renderLoginForm($errorMsg);
+                return;
+            }
+        }
+
+        // 5. Handle /admin.php (DLE Admin Decoy Trap)
+        if ($endpoint === 'dle-admin') {
+            // Safety failsafe: if real admin is admin.php or not renamed, abort immediately
+            $dleConfigFile = dirname(__DIR__) . '/data/config.php';
+            $dleConfig = [];
+            if (file_exists($dleConfigFile)) {
+                $config = [];
+                @include $dleConfigFile;
+                $dleConfig = $config;
+            }
+            if (empty($dleConfig['admin_path']) || $dleConfig['admin_path'] === 'admin.php') {
+                http_response_code(404);
+                echo "404 Not Found";
+                exit;
+            }
+
+            if ($method === 'GET') {
+                if ($mode === 'bomb') {
+                    self::logAttack('DLE_ADMIN_GET', ['action' => 'GZIP_BOMB']);
+                    self::serveGzipBomb();
+                }
+
+                if ($mode === 'tarpit') {
+                    self::logAttack('DLE_ADMIN_GET', ['action' => 'TARPIT']);
+                    self::serveTarpit((int) ($config['tarpit_seconds'] ?? 15));
+                }
+
+                self::renderDleAdminForm();
+                return;
+            }
+
+            if ($method === 'POST') {
+                $user = trim($_POST['username'] ?? $_POST['login_name'] ?? $_POST['log'] ?? '');
+                $pass = trim($_POST['password'] ?? $_POST['login_password'] ?? $_POST['pwd'] ?? '');
+
+                self::logAttack('DLE_ADMIN_BRUTEFORCE', [
+                    'user'   => $user ?: '-',
+                    'pass'   => $pass ?: '-',
+                    'action' => 'HARVEST_CREDENTIALS',
+                ]);
+
+                if ($mode === 'tarpit') {
+                    self::serveTarpit((int) ($config['tarpit_seconds'] ?? 15));
+                }
+
+                if ($mode === 'hybrid' || $mode === 'bomb') {
+                    self::serveGzipBomb();
+                }
+
+                // Deception fallback: show authentic DLE login error
+                self::renderDleAdminForm('Неверное имя пользователя или пароль.');
                 return;
             }
         }

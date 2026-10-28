@@ -123,6 +123,17 @@ assertTest("wp-admin/admin.gzip существует и > 5MB", filesize($repoDi
 assertTest("xmlrpc.php существует", file_exists($repoDir . '/upload/xmlrpc.php'));
 assertTest("Иконка honeypot.png существует", file_exists($repoDir . '/upload/public/adminpanel/images/honeypot.png'));
 
+// 9. Test DLE Admin Trap Decoy
+echo "\n9. Тест опциональной ловушки DLE Admin (/admin.php):\n";
+assertTest("admin.php.sample существует в upload/", file_exists($repoDir . '/upload/admin.php.sample'));
+assertTest("Метод renderDleAdminForm существует", method_exists('SiteHoneypot', 'renderDleAdminForm'));
+assertTest("Метод isDleAdminTrapActive существует", method_exists('SiteHoneypot', 'isDleAdminTrapActive'));
+assertTest("Метод toggleDleAdminTrap существует", method_exists('SiteHoneypot', 'toggleDleAdminTrap'));
+
+// Test failsafe: toggleDleAdminTrap must reject enabling when real admin is not configured
+$safetyTest = SiteHoneypot::toggleDleAdminTrap(true);
+assertTest("Защитный отказ активации: ловушка не перезаписывает стандартную админку", $safetyTest === false);
+
 echo "\n=======================================\n";
 echo "ИТОГ ТЕСТИРОВАНИЯ: Успешно: {$passCount}, Ошибок: {$failCount}\n";
 echo "=======================================\n";

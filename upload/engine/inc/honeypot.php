@@ -83,7 +83,26 @@ if ($action === 'block_ip') {
     }
 }
 
-$config = SiteHoneypot::getConfig();
+// 4. Action: Toggle DLE admin.php trap
+if ($action === 'toggle_dle_admin') {
+    $checkCsrf();
+    $enable = !empty($_POST['enable']);
+    $success = SiteHoneypot::toggleDleAdminTrap($enable);
+    if ($success) {
+        $message = $enable 
+            ? "Ловушка на стандартном адресе /admin.php успешно активирована!" 
+            : "Ловушка /admin.php успешно отключена.";
+    } else {
+        $message = "Не удалось активировать ловушку /admin.php: панель управления не переименована в настройках или указан путь по умолчанию.";
+        $messageType = "error";
+    }
+}
+
+$dleAdminPath = $config['admin_path'] ?? 'admin.php';
+$isRenamed = ($dleAdminPath !== 'admin.php' && !empty($dleAdminPath));
+$isTrapActive = SiteHoneypot::isDleAdminTrapActive();
+
+$hpConfig = SiteHoneypot::getConfig();
 $stats = SiteHoneypot::getStats();
 $recentAttacks = SiteHoneypot::getLog(50);
 $logSizeKb = round($stats['log_size'] / 1024, 1);
@@ -129,7 +148,7 @@ if ($message) {
                         'tarpit'    => 'Tarpit (Замедление)',
                         'deception' => 'Мимикрия (Без бомбы)',
                     ];
-                    echo htmlspecialchars($modeLabels[$config['mode']] ?? $config['mode'], ENT_QUOTES, 'UTF-8');
+                    echo htmlspecialchars($modeLabels[$hpConfig['mode']] ?? $hpConfig['mode'], ENT_QUOTES, 'UTF-8');
                     ?>
                 </h3>
             </div>
@@ -161,25 +180,25 @@ if ($message) {
                         <div class="col-sm-8">
                             <div class="radio">
                                 <label>
-                                    <input type="radio" name="mode" value="hybrid" <?= ($config['mode'] === 'hybrid' ? 'checked' : '') ?>>
+                                    <input type="radio" name="mode" value="hybrid" <?= ($hpConfig['mode'] === 'hybrid' ? 'checked' : '') ?>>
                                     <b>Гибридный (Рекомендуется)</b>: на GET отдавать страницу входа WP 6.x (~3 КБ); на POST логировать учетные данные брутфорса и взрывать Gzip-бомбой.
                                 </label>
                             </div>
                             <div class="radio">
                                 <label>
-                                    <input type="radio" name="mode" value="bomb" <?= ($config['mode'] === 'bomb' ? 'checked' : '') ?>>
+                                    <input type="radio" name="mode" value="bomb" <?= ($hpConfig['mode'] === 'bomb' ? 'checked' : '') ?>>
                                     <b>Мгновенная Gzip-бомба</b>: сразу детонировать 10 ГБ архив при любых запросах (только если клиент поддерживает gzip).
                                 </label>
                             </div>
                             <div class="radio">
                                 <label>
-                                    <input type="radio" name="mode" value="tarpit" <?= ($config['mode'] === 'tarpit' ? 'checked' : '') ?>>
+                                    <input type="radio" name="mode" value="tarpit" <?= ($hpConfig['mode'] === 'tarpit' ? 'checked' : '') ?>>
                                     <b>Tarpit (Вязкая смола)</b>: удерживать соединение 15-30 сек по 1 байту, зависая потоки сканеров без расхода трафика.
                                 </label>
                             </div>
                             <div class="radio">
                                 <label>
-                                    <input type="radio" name="mode" value="deception" <?= ($config['mode'] === 'deception' ? 'checked' : '') ?>>
+                                    <input type="radio" name="mode" value="deception" <?= ($hpConfig['mode'] === 'deception' ? 'checked' : '') ?>>
                                     <b>Чистая дезинформация</b>: собирать пароли и возвращать стандартную ошибку входа WordPress.
                                 </label>
                             </div>
@@ -189,7 +208,7 @@ if ($message) {
                     <div class="form-group">
                         <label class="control-label col-sm-4">Время удержания Tarpit (сек):</label>
                         <div class="col-sm-4">
-                            <input type="number" name="tarpit_seconds" min="5" max="60" class="form-control" value="<?= intval($config['tarpit_seconds'] ?? 15) ?>">
+                            <input type="number" name="tarpit_seconds" min="5" max="60" class="form-control" value="<?= intval($hpConfig['tarpit_seconds'] ?? 15) ?>">
                         </div>
                     </div>
 
@@ -197,7 +216,7 @@ if ($message) {
                         <label class="control-label col-sm-4">Журналирование атак:</label>
                         <div class="col-sm-8">
                             <label class="checkbox-inline">
-                                <input type="checkbox" name="log_enabled" value="1" <?= (!empty($config['log_enabled']) ? 'checked' : '') ?>> Вести защищенный лог попыток входа
+                                <input type="checkbox" name="log_enabled" value="1" <?= (!empty($hpConfig['log_enabled']) ? 'checked' : '') ?>> Вести защищенный лог попыток входа
                             </label>
                         </div>
                     </div>
@@ -206,6 +225,58 @@ if ($message) {
                         <button type="submit" class="btn btn-primary"><i class="fa fa-floppy-o position-left"></i>Сохранить настройки</button>
                     </div>
                 </form>
+            </div>
+        </div>
+
+        <!-- DLE Default admin.php Trap Panel -->
+        <div class="panel panel-default">
+            <div class="panel-heading">
+                <h6 class="panel-title"><i class="fa fa-user-secret position-left"></i>Защита стандартного адреса DLE (/admin.php)</h6>
+            </div>
+            <div class="panel-body">
+                <?php if (!$isRenamed): ?>
+                    <div class="alert alert-warning alert-styled-left" style="margin-bottom: 15px;">
+                        <h6 class="text-semibold" style="margin-top: 0;"><i class="fa fa-exclamation-triangle position-left"></i>Панель управления не переименована</h6>
+                        <p>Ваш сайт использует стандартный адрес админпанели: <code>admin.php</code>.</p>
+                        <p class="font-size-sm text-muted" style="margin-top: 5px;">
+                            Чтобы превратить <code>/admin.php</code> в приманку для ботов, сначала измените адрес админки в <b>Настройках системы DLE</b> (параметр <i>"Файл административной панели"</i>, например на <code>secret_admin.php</code>) и физически переименуйте файл на сервере. После этого здесь появится кнопка активации ловушки.
+                        </p>
+                    </div>
+                    <button type="button" class="btn btn-default" disabled title="Сначала переименуйте файл админки в настройках системы">
+                        <i class="fa fa-shield position-left"></i>Включить ловушку /admin.php (Недоступно)
+                    </button>
+                <?php else: ?>
+                    <div class="alert alert-info alert-styled-left" style="margin-bottom: 15px;">
+                        <h6 class="text-semibold" style="margin-top: 0;"><i class="fa fa-check-circle position-left"></i>Адрес админпанели безопасно изменен</h6>
+                        <p>Реальная панель управления находится по адресу: <code><?= htmlspecialchars($dleAdminPath, ENT_QUOTES, 'UTF-8') ?></code>.</p>
+                        <p class="font-size-sm" style="margin-top: 5px;">
+                            Стандартный адрес <code>/admin.php</code> свободен и может использоваться как ловушка. Боты, сканирующие DLE, увидят аутентичную страницу авторизации, а их попытки подбора паролей будут нейтрализованы выбранной санкцией.
+                        </p>
+                    </div>
+                    <div class="row">
+                        <div class="col-sm-6">
+                            <p style="margin-top: 5px;">Текущий статус: 
+                                <?php if ($isTrapActive): ?>
+                                    <span class="label label-success font-size-sm"><i class="fa fa-check position-left"></i>Ловушка активна</span>
+                                <?php else: ?>
+                                    <span class="label label-default font-size-sm"><i class="fa fa-power-off position-left"></i>Ловушка выключена</span>
+                                <?php endif; ?>
+                            </p>
+                        </div>
+                        <div class="col-sm-6 text-right">
+                            <form action="?mod=honeypot&action=toggle_dle_admin" method="post" style="display:inline-block;">
+                                <input type="hidden" name="user_hash" value="<?= $dle_login_hash ?>">
+                                <?php if ($isTrapActive): ?>
+                                    <input type="hidden" name="enable" value="0">
+                                    <button type="submit" class="btn btn-warning btn-sm"><i class="fa fa-power-off position-left"></i>Отключить ловушку /admin.php</button>
+                                <?php else: ?>
+                                    <input type="hidden" name="enable" value="1">
+                                    <button type="submit" class="btn btn-primary btn-sm"><i class="fa fa-shield position-left"></i>Включить ловушку /admin.php</button>
+                                <?php endif; ?>
+                            </form>
+                        </div>
+                    </div>
+                <?php endif; ?>
             </div>
         </div>
     </div>

@@ -171,6 +171,7 @@ $requiredEntries = [
     'upload/wp-admin/admin.php',
     'upload/wp-admin/admin.gzip',
     'upload/xmlrpc.php',
+    'upload/admin.php.sample',
     'honeypot-dle-plugin.xml',
     'README.md',
     'LICENSE',
