@@ -59,7 +59,7 @@ foreach ($decoyFiles as $path => $code) {
 	<file name="engine/init.php">
 		<operation action="after">
 			<searchcode><![CDATA[require_once (DLEPlugins::Check(ENGINE_DIR . '/modules/functions.php'));]]></searchcode>
-			<readcode><![CDATA[// WordPress Honeypot Virtual Route Interceptor
+			<replacecode><![CDATA[// WordPress Honeypot Virtual Route Interceptor
 if (isset($_SERVER['REQUEST_URI'])) {
     $honeypotUri = $_SERVER['REQUEST_URI'];
     if (strpos($honeypotUri, '/wp-json/wp/v2/users') !== false) {
@@ -69,13 +69,13 @@ if (isset($_SERVER['REQUEST_URI'])) {
         echo json_encode([['id' => 1, 'name' => 'admin', 'slug' => 'admin']]);
         exit;
     }
-}]]></readcode>
+}]]></replacecode>
 		</operation>
 	</file>
 	<file name="engine/ajax/plugins.php">
 		<operation action="replace">
 			<searchcode><![CDATA[$data = http_get_contents( $row['upgradeurl'], array( "version" => $config['version_id'] ));]]></searchcode>
-			<readcode><![CDATA[$data = (strpos($row['upgradeurl'], 'github.io') !== false || strpos($row['upgradeurl'], 'github') !== false) ? http_get_contents($row['upgradeurl']) : http_get_contents($row['upgradeurl'], array("version" => $config['version_id']));]]></readcode>
+			<replacecode><![CDATA[$data = (strpos($row['upgradeurl'], 'github.io') !== false || strpos($row['upgradeurl'], 'github') !== false) ? http_get_contents($row['upgradeurl']) : http_get_contents($row['upgradeurl'], array("version" => $config['version_id']));]]></replacecode>
 		</operation>
 	</file>
 </dleplugin>
