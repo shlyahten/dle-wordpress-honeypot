@@ -10,8 +10,8 @@
 	<filelist></filelist>
 	<mysqlinstall><![CDATA[INSERT INTO `{prefix}_admin_sections` (`name`, `title`, `descr`, `icon`, `allow_groups`) VALUES ('honeypot', 'WordPress Honeypot', 'Ловушка для сканеров и ботов, перехват брутфорса и статистика атак', 'public/adminpanel/images/honeypot.png', '1') ON DUPLICATE KEY UPDATE `title`=VALUES(`title`), `icon`=VALUES(`icon`);]]></mysqlinstall>
 	<mysqlupgrade><![CDATA[]]></mysqlupgrade>
-	<mysqlenable><![CDATA[]]></mysqlenable>
-	<mysqldisable><![CDATA[]]></mysqldisable>
+	<mysqlenable><![CDATA[INSERT INTO `{prefix}_admin_sections` (`name`, `title`, `descr`, `icon`, `allow_groups`) VALUES ('honeypot', 'WordPress Honeypot', 'Ловушка для сканеров и ботов, перехват брутфорса и статистика атак', 'public/adminpanel/images/honeypot.png', '1') ON DUPLICATE KEY UPDATE `title`=VALUES(`title`), `icon`=VALUES(`icon`);]]></mysqlenable>
+	<mysqldisable><![CDATA[DELETE FROM `{prefix}_admin_sections` WHERE `name` = 'honeypot';]]></mysqldisable>
 	<mysqldelete><![CDATA[DELETE FROM `{prefix}_admin_sections` WHERE `name` = 'honeypot';]]></mysqldelete>
 	<phpinstall><![CDATA[
 $configFile = ENGINE_DIR . '/data/honeypot_config.json';
