@@ -1,16 +1,12 @@
 <?php
 /*
 =====================================================
- DataLife Engine - by SoftNews Media Group 
+ WordPress Honeypot & Threat Intelligence for DLE
 -----------------------------------------------------
- https://dle-news.ru/
------------------------------------------------------
- Copyright (c) 2004-2026 SoftNews Media Group
-=====================================================
- File: honeypot.php
------------------------------------------------------
- Use: WordPress Honeypot & Threat Intelligence Core
+ Use: Core detection, mimicry and mitigation engine
  (Compliant with DLE Topic 72 Module Architecture)
+-----------------------------------------------------
+ License: MIT License
 =====================================================
 */
 
@@ -349,12 +345,14 @@ class SiteHoneypot
             $errorHtml = '<div id="login_error" class="notice notice-error"><p>' . htmlspecialchars($errorMsg, ENT_QUOTES, 'UTF-8') . '</p></div>';
         }
 
+        $siteName = htmlspecialchars($_SERVER['HTTP_HOST'] ?? 'WordPress', ENT_QUOTES, 'UTF-8');
+
         echo <<<HTML
 <!DOCTYPE html>
 <html lang="ru-RU">
 <head>
     <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
-    <title>Войти &lsaquo; shlyahten.ru &mdash; WordPress</title>
+    <title>Войти &lsaquo; {$siteName} &mdash; WordPress</title>
     <meta name="robots" content="max-image-preview:large, noindex, nofollow" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <style>
@@ -487,7 +485,7 @@ class SiteHoneypot
         <div class="clear"></div>
     </form>
     <p id="nav"><a href="/wp-login.php?action=lostpassword">Забыли пароль?</a></p>
-    <p id="backtoblog"><a href="/">&larr; Перейти к shlyahten.ru</a></p>
+    <p id="backtoblog"><a href="/">&larr; Перейти к {$siteName}</a></p>
 </div>
 </body>
 </html>

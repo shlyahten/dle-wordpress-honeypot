@@ -1,16 +1,12 @@
 <?php
 /*
 =====================================================
- DataLife Engine - by SoftNews Media Group 
+ WordPress Honeypot & Threat Intelligence for DLE
 -----------------------------------------------------
- https://dle-news.ru/
------------------------------------------------------
- Copyright (c) 2004-2026 SoftNews Media Group
-=====================================================
- File: honeypot.php
------------------------------------------------------
- Use: WordPress Honeypot & Threat Intelligence Admin
+ Use: Administration panel and threat analytics
  (Compliant with DLE Topic 73 Module Architecture)
+-----------------------------------------------------
+ License: MIT License
 =====================================================
 */
 

@@ -126,4 +126,4 @@ flowchart TD
 Распространяется под свободной лицензией [MIT](LICENSE). Модуль можно свободно использовать, модифицировать и интегрировать в любые коммерческие и некоммерческие проекты на DataLife Engine.
 
 Автор: [shlyahten](https://github.com/shlyahten)
-Сайт: [shlyahten.ru](https://shlyahten.ru)
+Сайт: [example.com](https://example.com)
