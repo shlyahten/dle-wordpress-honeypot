@@ -1,0 +1,51 @@
+name: CI & Code Quality
+
+on:
+  push:
+    branches:
+      - main
+    paths-ignore:
+      - 'README.md'
+      - 'LICENSE'
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  test:
+    name: PHP ${{ matrix.php }} Test
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        php: ['8.1', '8.2', '8.3', '8.4']
+      fail-fast: false
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          extensions: gd, zip, json, simplexml
+
+      - name: Lint PHP Files
+        run: |
+          find upload -type f -name "*.php" -exec php -l {} \;
+
+      - name: Validate XML Manifest
+        run: |
+          php -r 'simplexml_load_file("honeypot-dle-plugin.xml") or exit(1);'
+
+      - name: Validate version.json
+        run: |
+          php -r 'json_decode(file_get_contents("version.json")) or exit(1);'
+
+      - name: Run Test Suite
+        run: |
+          php tests/test_honeypot.php
+
+      - name: Test Build Package (Dry Run)
+        run: |
+          php scripts/build.php

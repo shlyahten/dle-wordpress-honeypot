@@ -5,3 +5,6 @@ Thumbs.db
 *.tmp
 .idea/
 .vscode/
+
+# Build artifacts
+dist/

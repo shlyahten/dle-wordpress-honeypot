@@ -5,9 +5,11 @@
 # WordPress Honeypot & Threat Intelligence for DataLife Engine (DLE 14 - 21+)
 
 [![DLE Compatibility](https://img.shields.io/badge/DLE-14.x--21.x-brightgreen.svg)](https://dle-news.ru/)
-[![PHP Version](https://img.shields.io/badge/PHP-8.0%2B-blue.svg)](https://php.net/)
+[![PHP Version](https://img.shields.io/badge/PHP-8.1%20%7C%208.2%20%7C%208.3%20%7C%208.4-blue.svg)](https://php.net/)
+[![CI Status](https://github.com/shlyahten/dle-wordpress-honeypot/actions/workflows/ci.yml/badge.svg)](https://github.com/shlyahten/dle-wordpress-honeypot/actions/workflows/ci.yml)
+[![Release](https://github.com/shlyahten/dle-wordpress-honeypot/actions/workflows/release.yml/badge.svg)](https://github.com/shlyahten/dle-wordpress-honeypot/actions/workflows/release.yml)
+[![Latest Release](https://img.shields.io/github/v/release/shlyahten/dle-wordpress-honeypot?color=orange)](https://github.com/shlyahten/dle-wordpress-honeypot/releases/latest)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Maintenance](https://img.shields.io/badge/Maintained%3F-yes-green.svg)](https://github.com/shlyahten/dle-wordpress-honeypot)
 
 Интеллектуальный модуль защиты и сбора аналитики угроз (Threat Intelligence) для **DataLife Engine**, маскирующийся под WordPress 6.x. Разработан в строгом соответствии с официальной документацией DLE ([Раздел 72](https://dle-news.ru/extras/online/?topic=72) и [Раздел 73](https://dle-news.ru/extras/online/?topic=73)).
 
@@ -125,9 +127,38 @@ flowchart TD
 
 ---
 
+## 🤖 Автоматическая сборка релизов и обновление через GitHub Actions & Pages
+
+В репозитории настроен полностью автоматизированный CI/CD пайплайн:
+
+1. **Непрерывная интеграция (CI)**:
+   - Проверка синтаксиса PHP на матрице версий **PHP 8.1, 8.2, 8.3, 8.4**.
+   - Валидация XML-манифеста плагина (`honeypot-dle-plugin.xml`) и структуры `version.json`.
+   - Автоматический прогон набора тестов (`tests/test_honeypot.php`).
+   - Тестовая сборка установочного ZIP-пакета.
+
+2. **Публикация нового релиза (CD)**:
+   Для выпуска новой версии достаточно создать и отправить тег в git:
+   ```bash
+   git tag v1.0.1
+   git push origin v1.0.1
+   ```
+   *Либо запустить вручную в GitHub: вкладка **Actions** → **Release & Update GitHub Pages** → **Run workflow** (с указанием версии).*
+
+   **Что происходит автоматически**:
+   - Запускается скрипт `scripts/build.php`, проверяющий целостность и собирающий дистрибутив `dist/dle-wordpress-honeypot.zip`.
+   - Обновляется тег `<version>` в `honeypot-dle-plugin.xml`.
+   - Обновляется эндпоинт `version.json`.
+   - Создается **GitHub Release** с прикрепленным архивом и standalone XML-файлом, генерируется список изменений (Changelog).
+   - Свежие `version.json` и `honeypot-dle-plugin.xml` коммитятся обратно в ветку `main`.
+   - **GitHub Pages** мгновенно публикует обновленный `version.json` на `https://shlyahten.github.io/dle-wordpress-honeypot/version.json`.
+   - В панели администратора DLE у пользователей сразу загорается уведомление о доступном обновлении с возможностью обновиться в 1 клик!
+
+---
+
 ## 📜 Лицензия
 
 Распространяется под свободной лицензией [MIT](LICENSE). Модуль можно свободно использовать, модифицировать и интегрировать в любые коммерческие и некоммерческие проекты на DataLife Engine.
 
 Автор: [shlyahten](https://github.com/shlyahten)
-Сайт: [example.com](https://example.com)
+Репозиторий: [github.com/shlyahten/dle-wordpress-honeypot](https://github.com/shlyahten/dle-wordpress-honeypot)

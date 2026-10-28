@@ -1,5 +1,5 @@
 {
-  "version": "1.0.0",
-  "url": "https://github.com/shlyahten/dle-wordpress-honeypot/releases/latest/download/honeypot-dle-plugin.xml",
-  "description": "WordPress Honeypot & Threat Intelligence для DataLife Engine"
+    "version": "1.0.0",
+    "url": "https://github.com/shlyahten/dle-wordpress-honeypot/releases/latest/download/honeypot-dle-plugin.xml",
+    "description": "WordPress Honeypot & Threat Intelligence для DataLife Engine"
 }
