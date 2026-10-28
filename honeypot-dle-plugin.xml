@@ -6,7 +6,7 @@
 	<version>1.0.0</version>
 	<dleversion>21.0</dleversion>
 	<versioncompare>greater</versioncompare>
-	<upgradeurl>https://raw.githubusercontent.com/shlyahten/dle-wordpress-honeypot/main/version.json</upgradeurl>
+	<upgradeurl>https://shlyahten.github.io/dle-wordpress-honeypot/version.json</upgradeurl>
 	<filelist></filelist>
 	<mysqlinstall><![CDATA[INSERT INTO `{prefix}_admin_sections` (`name`, `title`, `descr`, `icon`, `allow_groups`) VALUES ('honeypot', 'WordPress Honeypot', 'Ловушка для сканеров и ботов, перехват брутфорса и статистика атак', 'public/adminpanel/images/honeypot.png', '1') ON DUPLICATE KEY UPDATE `title`=VALUES(`title`), `icon`=VALUES(`icon`);]]></mysqlinstall>
 	<mysqlupgrade><![CDATA[]]></mysqlupgrade>
@@ -70,6 +70,12 @@ if (isset($_SERVER['REQUEST_URI'])) {
         exit;
     }
 }]]></readcode>
+		</operation>
+	</file>
+	<file name="engine/ajax/plugins.php">
+		<operation action="replace">
+			<searchcode><![CDATA[$data = http_get_contents( $row['upgradeurl'], array( "version" => $config['version_id'] ));]]></searchcode>
+			<readcode><![CDATA[$data = (strpos($row['upgradeurl'], 'github.io') !== false || strpos($row['upgradeurl'], 'github') !== false) ? http_get_contents($row['upgradeurl']) : http_get_contents($row['upgradeurl'], array("version" => $config['version_id']));]]></readcode>
 		</operation>
 	</file>
 </dleplugin>
