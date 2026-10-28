@@ -3,7 +3,7 @@
 	<name>WordPress Honeypot &amp; Threat Intelligence</name>
 	<description>Комплексная ловушка для ботов и сканеров, мимикрия под WordPress 6.x, перехват учетных данных брутфорса, защита gzip-бомбой и управление в панели администратора DLE.</description>
 	<icon>public/adminpanel/images/honeypot.png</icon>
-	<version>1.1.0</version>
+	<version>1.2.0</version>
 	<dleversion>21.0</dleversion>
 	<versioncompare>greater</versioncompare>
 	<upgradeurl>https://shlyahten.github.io/dle-wordpress-honeypot/version.json</upgradeurl>
@@ -58,7 +58,7 @@ foreach ($decoyFiles as $path => $code) {
 	<mnotice><![CDATA[]]></mnotice>
 	<file name="engine/init.php">
 		<operation action="after">
-			<searchcode><![CDATA[require_once (DLEPlugins::Check(ENGINE_DIR . '/modules/functions.php'));]]></searchcode>
+			<searchcode><![CDATA[include_once (DLEPlugins::Check(ENGINE_DIR . '/modules/functions.php'));]]></searchcode>
 			<replacecode><![CDATA[// WordPress Honeypot Virtual Route Interceptor
 if (isset($_SERVER['REQUEST_URI'])) {
     $honeypotUri = $_SERVER['REQUEST_URI'];

@@ -104,6 +104,10 @@ assertTest("Секция <mysqlenable> присутствует", !empty((string
 assertTest("Секция <mysqldisable> присутствует", !empty((string)$xml->mysqldisable));
 assertTest("Секция <mysqldelete> присутствует", !empty((string)$xml->mysqldelete));
 
+$rawXml = file_get_contents($repoDir . '/honeypot-dle-plugin.xml');
+assertTest("Хук engine/init.php использует include_once", strpos($rawXml, 'include_once (DLEPlugins::Check(ENGINE_DIR . \'/modules/functions.php\'));') !== false);
+assertTest("Хук engine/ajax/plugins.php использует replacecode", strpos($rawXml, '<replacecode><![CDATA[$data = (strpos($row[\'upgradeurl\'], \'github.io\')') !== false);
+
 // 7. Check for Absence of Hardcoded Domains
 echo "\n7. Тест отсутствия захардкоженных доменов:\n";
 $xmlRaw = file_get_contents($repoDir . '/honeypot-dle-plugin.xml');
