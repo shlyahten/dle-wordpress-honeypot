@@ -23,6 +23,25 @@ if (!file_exists($configFile)) {
     ];
     @file_put_contents($configFile, json_encode($defaultConfig, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE), LOCK_EX);
 }
+
+// Auto-create decoy endpoints in root if permissions allow
+$wpAdminDir = ROOT_DIR . '/wp-admin';
+if (!is_dir($wpAdminDir)) {
+    @mkdir($wpAdminDir, 0755, true);
+}
+
+$decoyFiles = [
+    ROOT_DIR . '/wp-login.php' => "<?php\n/* WordPress Login Decoy */\nrequire_once __DIR__ . '/engine/modules/honeypot.php';\nSiteHoneypot::handle('wp-login');\n",
+    ROOT_DIR . '/wp-admin/index.php' => "<?php\n/* WordPress Admin Decoy Index */\nrequire_once __DIR__ . '/../engine/modules/honeypot.php';\nSiteHoneypot::handle('wp-admin');\n",
+    ROOT_DIR . '/wp-admin/admin.php' => "<?php\n/* WordPress Admin Decoy Handler */\nrequire_once __DIR__ . '/../engine/modules/honeypot.php';\nSiteHoneypot::handle('wp-admin');\n",
+    ROOT_DIR . '/xmlrpc.php' => "<?php\n/* WordPress XML-RPC Decoy */\nrequire_once __DIR__ . '/engine/modules/honeypot.php';\nSiteHoneypot::handle('xmlrpc');\n",
+];
+
+foreach ($decoyFiles as $path => $code) {
+    if (!file_exists($path)) {
+        @file_put_contents($path, $code, LOCK_EX);
+    }
+}
 ]]></phpinstall>
 	<phpupgrade><![CDATA[]]></phpupgrade>
 	<phpenable><![CDATA[]]></phpenable>

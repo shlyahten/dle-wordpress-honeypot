@@ -282,18 +282,35 @@ class SiteHoneypot
     {
         $acceptEncoding = $_SERVER['HTTP_ACCEPT_ENCODING'] ?? '';
 
-        if (stripos($acceptEncoding, 'gzip') !== false && file_exists(self::$gzipFile)) {
-            $size = @filesize(self::$gzipFile);
-            header("Content-Encoding: gzip");
-            header("Content-Type: text/html; charset=UTF-8");
-            if ($size) {
-                header("Content-Length: " . $size);
+        if (stripos($acceptEncoding, 'gzip') !== false) {
+            // Auto-create admin.gzip if missing
+            if (!file_exists(self::$gzipFile)) {
+                $dir = dirname(self::$gzipFile);
+                if (!is_dir($dir)) {
+                    @mkdir($dir, 0755, true);
+                }
+                $fp = @gzopen(self::$gzipFile, 'w9');
+                if ($fp) {
+                    for ($i = 0; $i < 10; $i++) {
+                        @gzwrite($fp, str_repeat("\0", 1024 * 1024));
+                    }
+                    @gzclose($fp);
+                }
             }
-            while (ob_get_level()) {
-                ob_end_clean();
+
+            if (file_exists(self::$gzipFile)) {
+                $size = @filesize(self::$gzipFile);
+                header("Content-Encoding: gzip");
+                header("Content-Type: text/html; charset=UTF-8");
+                if ($size) {
+                    header("Content-Length: " . $size);
+                }
+                while (ob_get_level()) {
+                    ob_end_clean();
+                }
+                @readfile(self::$gzipFile);
+                exit;
             }
-            @readfile(self::$gzipFile);
-            exit;
         }
 
         // If client doesn't accept gzip, don't waste 10MB of bandwidth!
