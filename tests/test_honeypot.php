@@ -100,9 +100,12 @@ assertTest("Тег <version> заполнен", preg_match('/^[0-9]+\.[0-9]+(\.[
 assertTest("Тег <dleversion> равен 21.0", (string)$xml->dleversion === '21.0');
 assertTest("Тег <upgradeurl> указывает на GitHub Pages", strpos((string)$xml->upgradeurl, 'github.io') !== false);
 assertTest("Секция <mysqlinstall> присутствует", !empty((string)$xml->mysqlinstall));
+assertTest("Секция <mysqlupgrade> присутствует", !empty((string)$xml->mysqlupgrade));
 assertTest("Секция <mysqlenable> присутствует", !empty((string)$xml->mysqlenable));
 assertTest("Секция <mysqldisable> присутствует", !empty((string)$xml->mysqldisable));
 assertTest("Секция <mysqldelete> присутствует", !empty((string)$xml->mysqldelete));
+assertTest("Тег <filedelete> равен 1 (DLE Topic 21)", (string)$xml->filedelete === '1');
+assertTest("Секция <phpdelete> присутствует для безопасной очистки", !empty((string)$xml->phpdelete));
 
 $rawXml = file_get_contents($repoDir . '/honeypot-dle-plugin.xml');
 assertTest("Хук engine/init.php использует include_once", strpos($rawXml, 'include_once (DLEPlugins::Check(ENGINE_DIR . \'/modules/functions.php\'));') !== false);
@@ -137,6 +140,33 @@ assertTest("Метод toggleDleAdminTrap существует", method_exists('
 // Test failsafe: toggleDleAdminTrap must reject enabling when real admin is not configured
 $safetyTest = SiteHoneypot::toggleDleAdminTrap(true);
 assertTest("Защитный отказ активации: ловушка не перезаписывает стандартную админку", $safetyTest === false);
+
+// 10. Test ZIP Archive DLE Specification (Topic 21)
+$zipFile = $repoDir . '/dist/dle-wordpress-honeypot.zip';
+if (file_exists($zipFile)) {
+    echo "\n10. Тест соответствия структуры ZIP-архива спецификации DLE:\n";
+    $zip = new ZipArchive();
+    $opened = $zip->open($zipFile);
+    assertTest("ZIP архив открывается корректно", $opened === true);
+    if ($opened === true) {
+        assertTest("Манифест лежит в корне архива", $zip->locateName('honeypot-dle-plugin.xml') !== false);
+        assertTest("Модуль лежит по пути engine/modules/honeypot.php", $zip->locateName('engine/modules/honeypot.php') !== false);
+        assertTest("Админ-модуль лежит по пути engine/inc/honeypot.php", $zip->locateName('engine/inc/honeypot.php') !== false);
+        assertTest("Иконка лежит по пути public/adminpanel/images/honeypot.png", $zip->locateName('public/adminpanel/images/honeypot.png') !== false);
+
+        $hasUploadPrefix = false;
+        for ($i = 0; $i < $zip->numFiles; $i++) {
+            if (strpos($zip->getNameIndex($i), 'upload/') === 0) {
+                $hasUploadPrefix = true;
+                break;
+            }
+        }
+        assertTest("В архиве отсутствуют пути с префиксом upload/", !$hasUploadPrefix);
+        assertTest("В архиве отсутствуют лишние корневые файлы (README.md)", $zip->locateName('README.md') === false);
+        assertTest("В архиве отсутствуют лишние корневые файлы (logo.png)", $zip->locateName('logo.png') === false);
+        $zip->close();
+    }
+}
 
 echo "\n=======================================\n";
 echo "ИТОГ ТЕСТИРОВАНИЯ: Успешно: {$passCount}, Ошибок: {$failCount}\n";

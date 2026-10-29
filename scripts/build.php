@@ -133,13 +133,13 @@ function copyDir($src, $dst) {
     closedir($dir);
 }
 
-copyDir($repoDir . '/upload', $tempBuild . '/upload');
+// In accordance with DLE Plugin Specification (Topic 21):
+// The archive contents must be structured relative to the DLE installation root (ROOT_DIR).
+// honeypot-dle-plugin.xml must be placed at the root of the ZIP archive.
+// Non-installation files (README, LICENSE, logo) must NOT be packaged inside the installation ZIP,
+// as dle_zip_extract extracts all archive members directly into the web root.
+copyDir($repoDir . '/upload', $tempBuild);
 copy($xmlFile, $tempBuild . '/honeypot-dle-plugin.xml');
-copy($repoDir . '/README.md', $tempBuild . '/README.md');
-copy($repoDir . '/LICENSE', $tempBuild . '/LICENSE');
-if (file_exists($repoDir . '/logo.png')) {
-    copy($repoDir . '/logo.png', $tempBuild . '/logo.png');
-}
 
 $cmd = 'cd ' . escapeshellarg($tempBuild) . ' && zip -r -9 ' . escapeshellarg($zipFile) . ' .';
 exec($cmd, $zipOut, $zipCode);
@@ -163,24 +163,37 @@ if ($zip->open($zipFile) !== true) {
 }
 
 $requiredEntries = [
-    'upload/engine/modules/honeypot.php',
-    'upload/engine/inc/honeypot.php',
-    'upload/public/adminpanel/images/honeypot.png',
-    'upload/wp-login.php',
-    'upload/wp-admin/index.php',
-    'upload/wp-admin/admin.php',
-    'upload/wp-admin/admin.gzip',
-    'upload/xmlrpc.php',
-    'upload/admin.php.sample',
+    'engine/modules/honeypot.php',
+    'engine/inc/honeypot.php',
+    'public/adminpanel/images/honeypot.png',
+    'wp-login.php',
+    'wp-admin/index.php',
+    'wp-admin/admin.php',
+    'wp-admin/admin.gzip',
+    'xmlrpc.php',
+    'admin.php.sample',
     'honeypot-dle-plugin.xml',
-    'README.md',
-    'LICENSE',
-    'logo.png',
 ];
 
 foreach ($requiredEntries as $entry) {
     if ($zip->locateName($entry) === false) {
         fwrite(STDERR, "Error: Missing {$entry} in zip package!\n");
+        $zip->close();
+        exit(1);
+    }
+}
+
+// Verify that no entries contain unwanted "upload/" prefix or root clutter
+$forbiddenExact = ['README.md', 'LICENSE', 'logo.png'];
+for ($i = 0; $i < $zip->numFiles; $i++) {
+    $entryName = $zip->getNameIndex($i);
+    if (strpos($entryName, 'upload/') === 0) {
+        fwrite(STDERR, "Error: Archive contains disallowed prefix 'upload/' in entry '{$entryName}'!\n");
+        $zip->close();
+        exit(1);
+    }
+    if (in_array($entryName, $forbiddenExact, true)) {
+        fwrite(STDERR, "Error: Archive contains root clutter file '{$entryName}'!\n");
         $zip->close();
         exit(1);
     }
