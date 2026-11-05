@@ -20,7 +20,9 @@ function assertTest(string $name, bool $condition, string $details = '') {
     }
 }
 
-echo "=== Honeypot Automated Test Suite v1.4.0 ===\n\n";
+echo "=== Honeypot Automated Test Suite v1.4.2 ===\n\n";
+
+assertTest("SiteHoneypot::VERSION константа равна 1.4.2", defined('SiteHoneypot::VERSION') && SiteHoneypot::VERSION === '1.4.2');
 
 // 1. Search Engine Crawler Filter
 echo "1. Тест фильтрации поисковых роботов:\n";
@@ -100,7 +102,7 @@ assertTest("XML-RPC GET возвращает текст о POST запросах
 echo "\n6. Тест целостности манифеста плагина:\n";
 $xml = simplexml_load_file($repoDir . '/honeypot-dle-plugin.xml');
 assertTest("Тег <name> корректен", !empty((string)$xml->name));
-assertTest("Тег <version> равен 1.4.1", (string)$xml->version === '1.4.1');
+assertTest("Тег <version> равен 1.4.2", (string)$xml->version === '1.4.2');
 assertTest("Тег <dleversion> равен 21.0", (string)$xml->dleversion === '21.0');
 assertTest("Тег <upgradeurl> указывает на GitHub Pages", strpos((string)$xml->upgradeurl, 'github.io') !== false);
 assertTest("Секция <mysqlinstall> присутствует", !empty((string)$xml->mysqlinstall));

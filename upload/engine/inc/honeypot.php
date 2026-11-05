@@ -198,9 +198,16 @@ if (!empty($stats['top_ips'])) {
 $siteUrl = rtrim($config['http_home_url'] ?? ('http://' . ($_SERVER['HTTP_HOST'] ?? 'localhost')), '/');
 $feedUrl = $siteUrl . '/honeypot-feed.txt?token=' . urlencode($hpConfig['feed_token'] ?? '');
 
+// Determine plugin version dynamically from DB or class constant
+$hpVersion = class_exists('SiteHoneypot') && defined('SiteHoneypot::VERSION') ? SiteHoneypot::VERSION : '1.4.2';
+$pluginRow = $db->super_query("SELECT version FROM " . PREFIX . "_plugins WHERE name LIKE '%Honeypot%' LIMIT 1");
+if (!empty($pluginRow['version'])) {
+    $hpVersion = htmlspecialchars($pluginRow['version'], ENT_QUOTES, 'UTF-8');
+}
+
 echoheader(
     "<i class=\"fa fa-shield position-left\"></i><span class=\"text-semibold\">WordPress Honeypot &amp; Threat Intelligence</span>",
-    "Центр активной защиты, перехвата атак и аналитики угроз (v1.4.0)"
+    "Центр активной защиты, перехвата атак и аналитики угроз (v{$hpVersion})"
 );
 
 if ($message) {

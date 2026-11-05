@@ -19,6 +19,8 @@ if (!defined('ENGINE_DIR')) {
 
 class SiteHoneypot
 {
+    public const VERSION = '1.4.2';
+
     private static $configFile   = ENGINE_DIR . '/data/honeypot_config.json';
     private static $logFile      = ENGINE_DIR . '/data/honeypot.log';
     private static $gzipFile     = ROOT_DIR . '/wp-admin/admin.gzip';
