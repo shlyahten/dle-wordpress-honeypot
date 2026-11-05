@@ -3,11 +3,11 @@
 	<name>WordPress Honeypot &amp; Threat Intelligence</name>
 	<description>Комплексная ловушка для ботов и сканеров, мимикрия под WordPress 6.x, перехват учетных данных брутфорса, защита gzip-бомбой, tarpit, sinkhole, автобан в DLE и экспорт фида угроз.</description>
 	<icon>public/adminpanel/images/honeypot.png</icon>
-	<version>1.4.0</version>
+	<version>1.4.1</version>
 	<dleversion>21.0</dleversion>
 	<versioncompare>greater</versioncompare>
 	<upgradeurl>https://shlyahten.github.io/dle-wordpress-honeypot/version.json</upgradeurl>
-	<filelist></filelist>
+	<filelist>engine/modules/honeypot.php,engine/inc/honeypot.php,public/adminpanel/images/honeypot.png,wp-login.php,wp-admin/index.php,wp-admin/admin.php,wp-admin/admin.gzip,xmlrpc.php</filelist>
 	<filedelete>1</filedelete>
 	<mysqlinstall><![CDATA[INSERT INTO `{prefix}_admin_sections` (`name`, `title`, `descr`, `icon`, `allow_groups`) VALUES ('honeypot', 'WordPress Honeypot', 'Ловушка для сканеров и ботов, перехват брутфорса, активная нейтрализация и статистика атак', 'public/adminpanel/images/honeypot.png', '1') ON DUPLICATE KEY UPDATE `title`=VALUES(`title`), `descr`=VALUES(`descr`), `icon`=VALUES(`icon`);]]></mysqlinstall>
 	<mysqlupgrade><![CDATA[INSERT INTO `{prefix}_admin_sections` (`name`, `title`, `descr`, `icon`, `allow_groups`) VALUES ('honeypot', 'WordPress Honeypot', 'Ловушка для сканеров и ботов, перехват брутфорса, активная нейтрализация и статистика атак', 'public/adminpanel/images/honeypot.png', '1') ON DUPLICATE KEY UPDATE `title`=VALUES(`title`), `descr`=VALUES(`descr`), `icon`=VALUES(`icon`);]]></mysqlupgrade>
@@ -44,6 +44,26 @@ if (!file_exists($configFile)) {
     @file_put_contents($configFile, json_encode($defaultConfig, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE), LOCK_EX);
 }
 
+// Auto-sync core module files from repository if missing or outdated
+$targetCore = ENGINE_DIR . '/modules/honeypot.php';
+$targetInc  = ENGINE_DIR . '/inc/honeypot.php';
+$rawBase = 'https://raw.githubusercontent.com/shlyahten/dle-wordpress-honeypot/main/upload';
+
+if (function_exists('http_get_contents')) {
+    if (!file_exists($targetCore) || strpos((string)@file_get_contents($targetCore), 'injectSpiderTrap') === false) {
+        $newCore = @http_get_contents($rawBase . '/engine/modules/honeypot.php');
+        if ($newCore && strpos($newCore, 'injectSpiderTrap') !== false) {
+            @file_put_contents($targetCore, $newCore, LOCK_EX);
+        }
+    }
+    if (!file_exists($targetInc) || strpos((string)@file_get_contents($targetInc), 'save_vectors') === false) {
+        $newInc = @http_get_contents($rawBase . '/engine/inc/honeypot.php');
+        if ($newInc && strpos($newInc, 'save_vectors') !== false) {
+            @file_put_contents($targetInc, $newInc, LOCK_EX);
+        }
+    }
+}
+
 // Ensure honeypot icon exists
 $iconFile = ROOT_DIR . '/public/adminpanel/images/honeypot.png';
 if (!file_exists($iconFile) && file_exists(ROOT_DIR . '/public/adminpanel/images/iptools.png')) {
@@ -78,8 +98,53 @@ foreach ($decoyFiles as $path => $code) {
     }
 }
 ]]></phpinstall>
-	<phpupgrade><![CDATA[]]></phpupgrade>
-	<phpenable><![CDATA[]]></phpenable>
+	<phpupgrade><![CDATA[
+// Auto-sync updated core files on upgrade
+$targetCore = ENGINE_DIR . '/modules/honeypot.php';
+$targetInc  = ENGINE_DIR . '/inc/honeypot.php';
+$rawBase = 'https://raw.githubusercontent.com/shlyahten/dle-wordpress-honeypot/main/upload';
+
+if (function_exists('http_get_contents')) {
+    $newCore = @http_get_contents($rawBase . '/engine/modules/honeypot.php');
+    if ($newCore && strpos($newCore, 'injectSpiderTrap') !== false) {
+        @file_put_contents($targetCore, $newCore, LOCK_EX);
+    }
+    $newInc = @http_get_contents($rawBase . '/engine/inc/honeypot.php');
+    if ($newInc && strpos($newInc, 'save_vectors') !== false) {
+        @file_put_contents($targetInc, $newInc, LOCK_EX);
+    }
+}
+
+// Auto-create quarantine directory if missing
+$quarantineDir = ENGINE_DIR . '/data/quarantine';
+if (!is_dir($quarantineDir)) {
+    @mkdir($quarantineDir, 0750, true);
+    $htaccess = "Order Deny,Allow\nDeny from all\nOptions -ExecCGI -Indexes\nRemoveHandler .php .phtml .php3 .php4 .php5 .php7 .phps .cgi .pl .py .asp .jsp .sh\n";
+    @file_put_contents($quarantineDir . '/.htaccess', $htaccess, LOCK_EX);
+    @file_put_contents($quarantineDir . '/index.html', '', LOCK_EX);
+}
+]]></phpupgrade>
+	<phpenable><![CDATA[
+// Ensure core files are up to date when enabling plugin
+$targetCore = ENGINE_DIR . '/modules/honeypot.php';
+$targetInc  = ENGINE_DIR . '/inc/honeypot.php';
+$rawBase = 'https://raw.githubusercontent.com/shlyahten/dle-wordpress-honeypot/main/upload';
+
+if (function_exists('http_get_contents')) {
+    if (!file_exists($targetCore) || strpos((string)@file_get_contents($targetCore), 'injectSpiderTrap') === false) {
+        $newCore = @http_get_contents($rawBase . '/engine/modules/honeypot.php');
+        if ($newCore && strpos($newCore, 'injectSpiderTrap') !== false) {
+            @file_put_contents($targetCore, $newCore, LOCK_EX);
+        }
+    }
+    if (!file_exists($targetInc) || strpos((string)@file_get_contents($targetInc), 'save_vectors') === false) {
+        $newInc = @http_get_contents($rawBase . '/engine/inc/honeypot.php');
+        if ($newInc && strpos($newInc, 'save_vectors') !== false) {
+            @file_put_contents($targetInc, $newInc, LOCK_EX);
+        }
+    }
+}
+]]></phpenable>
 	<phpdisable><![CDATA[]]></phpdisable>
 	<phpdelete><![CDATA[
 $decoyFiles = [
@@ -129,7 +194,7 @@ if (file_exists($logFile)) {
 }
 ]]></phpdelete>
 	<notice><![CDATA[Модуль WordPress Honeypot успешно установлен! Раздел доступен в панели управления в меню "WordPress Honeypot" или по адресу admin.php?mod=honeypot.]]></notice>
-	<instructions><![CDATA[<h3>WordPress Honeypot &amp; Threat Intelligence v1.4.0</h3><p>Модуль перехватывает атаки ботов, имитируя WordPress 6.x, защищает от брутфорса, утечек sensitive файлов и вебшеллов. Управление режимами нейтрализации, векторами перехвата и экспорт фида угроз доступны в панели управления DLE в разделе <b>WordPress Honeypot</b>.</p>]]></instructions>
+	<instructions><![CDATA[<h3>WordPress Honeypot &amp; Threat Intelligence v1.4.1</h3><p>Модуль перехватывает атаки ботов, имитируя WordPress 6.x, защищает от брутфорса, утечек sensitive файлов и вебшеллов. Управление режимами нейтрализации, векторами перехвата и экспорт фида угроз доступны в панели управления DLE в разделе <b>WordPress Honeypot</b>.</p>]]></instructions>
 	<mnotice><![CDATA[]]></mnotice>
 	<file name="engine/init.php">
 		<operation action="after">
@@ -147,9 +212,13 @@ if (isset($_SERVER['REQUEST_URI'])) {
         strpos($hpUri, '.sql') !== false ||
         strpos($hpUri, '.bak') !== false
     ) {
-        require_once DLEPlugins::Check(ENGINE_DIR . '/modules/honeypot.php');
-        if (SiteHoneypot::handleRoute($hpUri)) {
-            exit;
+        if (file_exists(ENGINE_DIR . '/modules/honeypot.php')) {
+            require_once DLEPlugins::Check(ENGINE_DIR . '/modules/honeypot.php');
+            if (method_exists('SiteHoneypot', 'handleRoute')) {
+                if (SiteHoneypot::handleRoute($hpUri)) {
+                    exit;
+                }
+            }
         }
     }
 }]]></replacecode>
@@ -161,7 +230,9 @@ if (isset($_SERVER['REQUEST_URI'])) {
 			<replacecode><![CDATA[// WordPress Honeypot Spider Trap Injection
 if (file_exists(ENGINE_DIR . '/modules/honeypot.php')) {
     require_once DLEPlugins::Check(ENGINE_DIR . '/modules/honeypot.php');
-    $tpl->result['main'] = SiteHoneypot::injectSpiderTrap($tpl->result['main']);
+    if (method_exists('SiteHoneypot', 'injectSpiderTrap')) {
+        $tpl->result['main'] = SiteHoneypot::injectSpiderTrap($tpl->result['main']);
+    }
 }]]></replacecode>
 		</operation>
 	</file>
