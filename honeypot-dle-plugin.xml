@@ -1,26 +1,45 @@
 <?xml version="1.0" encoding="utf-8"?>
 <dleplugin>
 	<name>WordPress Honeypot &amp; Threat Intelligence</name>
-	<description>Комплексная ловушка для ботов и сканеров, мимикрия под WordPress 6.x, перехват учетных данных брутфорса, защита gzip-бомбой и управление в панели администратора DLE.</description>
+	<description>Комплексная ловушка для ботов и сканеров, мимикрия под WordPress 6.x, перехват учетных данных брутфорса, защита gzip-бомбой, tarpit, sinkhole, автобан в DLE и экспорт фида угроз.</description>
 	<icon>public/adminpanel/images/honeypot.png</icon>
-	<version>1.3.0</version>
+	<version>1.4.0</version>
 	<dleversion>21.0</dleversion>
 	<versioncompare>greater</versioncompare>
 	<upgradeurl>https://shlyahten.github.io/dle-wordpress-honeypot/version.json</upgradeurl>
 	<filelist></filelist>
 	<filedelete>1</filedelete>
-	<mysqlinstall><![CDATA[INSERT INTO `{prefix}_admin_sections` (`name`, `title`, `descr`, `icon`, `allow_groups`) VALUES ('honeypot', 'WordPress Honeypot', 'Ловушка для сканеров и ботов, перехват брутфорса и статистика атак', 'public/adminpanel/images/honeypot.png', '1') ON DUPLICATE KEY UPDATE `title`=VALUES(`title`), `icon`=VALUES(`icon`);]]></mysqlinstall>
-	<mysqlupgrade><![CDATA[INSERT INTO `{prefix}_admin_sections` (`name`, `title`, `descr`, `icon`, `allow_groups`) VALUES ('honeypot', 'WordPress Honeypot', 'Ловушка для сканеров и ботов, перехват брутфорса и статистика атак', 'public/adminpanel/images/honeypot.png', '1') ON DUPLICATE KEY UPDATE `title`=VALUES(`title`), `icon`=VALUES(`icon`);]]></mysqlupgrade>
-	<mysqlenable><![CDATA[INSERT INTO `{prefix}_admin_sections` (`name`, `title`, `descr`, `icon`, `allow_groups`) VALUES ('honeypot', 'WordPress Honeypot', 'Ловушка для сканеров и ботов, перехват брутфорса и статистика атак', 'public/adminpanel/images/honeypot.png', '1') ON DUPLICATE KEY UPDATE `title`=VALUES(`title`), `icon`=VALUES(`icon`);]]></mysqlenable>
+	<mysqlinstall><![CDATA[INSERT INTO `{prefix}_admin_sections` (`name`, `title`, `descr`, `icon`, `allow_groups`) VALUES ('honeypot', 'WordPress Honeypot', 'Ловушка для сканеров и ботов, перехват брутфорса, активная нейтрализация и статистика атак', 'public/adminpanel/images/honeypot.png', '1') ON DUPLICATE KEY UPDATE `title`=VALUES(`title`), `descr`=VALUES(`descr`), `icon`=VALUES(`icon`);]]></mysqlinstall>
+	<mysqlupgrade><![CDATA[INSERT INTO `{prefix}_admin_sections` (`name`, `title`, `descr`, `icon`, `allow_groups`) VALUES ('honeypot', 'WordPress Honeypot', 'Ловушка для сканеров и ботов, перехват брутфорса, активная нейтрализация и статистика атак', 'public/adminpanel/images/honeypot.png', '1') ON DUPLICATE KEY UPDATE `title`=VALUES(`title`), `descr`=VALUES(`descr`), `icon`=VALUES(`icon`);]]></mysqlupgrade>
+	<mysqlenable><![CDATA[INSERT INTO `{prefix}_admin_sections` (`name`, `title`, `descr`, `icon`, `allow_groups`) VALUES ('honeypot', 'WordPress Honeypot', 'Ловушка для сканеров и ботов, перехват брутфорса, активная нейтрализация и статистика атак', 'public/adminpanel/images/honeypot.png', '1') ON DUPLICATE KEY UPDATE `title`=VALUES(`title`), `descr`=VALUES(`descr`), `icon`=VALUES(`icon`);]]></mysqlenable>
 	<mysqldisable><![CDATA[DELETE FROM `{prefix}_admin_sections` WHERE `name` = 'honeypot';]]></mysqldisable>
 	<mysqldelete><![CDATA[DELETE FROM `{prefix}_admin_sections` WHERE `name` = 'honeypot';]]></mysqldelete>
 	<phpinstall><![CDATA[
 $configFile = ENGINE_DIR . '/data/honeypot_config.json';
 if (!file_exists($configFile)) {
     $defaultConfig = [
-        'mode' => 'hybrid',
-        'tarpit_seconds' => 15,
-        'log_enabled' => true,
+        'mode'              => 'hybrid',
+        'tarpit_seconds'    => 15,
+        'log_enabled'       => true,
+        'log_max_lines'     => 2000,
+        'vectors'           => [
+            'wp_login'         => true,
+            'wp_admin'         => true,
+            'wp_xmlrpc'        => true,
+            'wp_rest_users'    => true,
+            'sensitive_files'  => true,
+            'spider_trap'      => true,
+            'webshell_catcher' => true,
+            'dle_admin'        => false,
+        ],
+        'autoban_enabled'   => true,
+        'autoban_threshold' => 3,
+        'autoban_days'      => 0,
+        'feed_enabled'      => true,
+        'feed_token'        => 'hp_' . bin2hex(random_bytes(12)),
+        'feed_format'       => 'plain',
+        'abuseipdb_enabled' => false,
+        'abuseipdb_key'     => '',
     ];
     @file_put_contents($configFile, json_encode($defaultConfig, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE), LOCK_EX);
 }
@@ -29,6 +48,15 @@ if (!file_exists($configFile)) {
 $iconFile = ROOT_DIR . '/public/adminpanel/images/honeypot.png';
 if (!file_exists($iconFile) && file_exists(ROOT_DIR . '/public/adminpanel/images/iptools.png')) {
     @copy(ROOT_DIR . '/public/adminpanel/images/iptools.png', $iconFile);
+}
+
+// Auto-create quarantine directory with strict security
+$quarantineDir = ENGINE_DIR . '/data/quarantine';
+if (!is_dir($quarantineDir)) {
+    @mkdir($quarantineDir, 0750, true);
+    $htaccess = "Order Deny,Allow\nDeny from all\nOptions -ExecCGI -Indexes\nRemoveHandler .php .phtml .php3 .php4 .php5 .php7 .phps .cgi .pl .py .asp .jsp .sh\n";
+    @file_put_contents($quarantineDir . '/.htaccess', $htaccess, LOCK_EX);
+    @file_put_contents($quarantineDir . '/index.html', '', LOCK_EX);
 }
 
 // Auto-create decoy endpoints in root if permissions allow
@@ -76,6 +104,21 @@ if (is_dir($wpAdminDir)) {
         @rmdir($wpAdminDir);
     }
 }
+
+// Clean up quarantine
+$quarantineDir = ENGINE_DIR . '/data/quarantine';
+if (is_dir($quarantineDir)) {
+    $qFiles = @scandir($quarantineDir);
+    if ($qFiles) {
+        foreach ($qFiles as $qf) {
+            if ($qf !== '.' && $qf !== '..') {
+                @unlink($quarantineDir . '/' . $qf);
+            }
+        }
+    }
+    @rmdir($quarantineDir);
+}
+
 $configFile = ENGINE_DIR . '/data/honeypot_config.json';
 if (file_exists($configFile)) {
     @unlink($configFile);
@@ -86,21 +129,39 @@ if (file_exists($logFile)) {
 }
 ]]></phpdelete>
 	<notice><![CDATA[Модуль WordPress Honeypot успешно установлен! Раздел доступен в панели управления в меню "WordPress Honeypot" или по адресу admin.php?mod=honeypot.]]></notice>
-	<instructions><![CDATA[<h3>WordPress Honeypot &amp; Threat Intelligence</h3><p>Модуль перехватывает атаки ботов, имитируя WordPress 6.x. Журнал атак, собранные пароли ботов и управление режимами доступны в панели управления DLE в разделе <b>WordPress Honeypot</b>.</p>]]></instructions>
+	<instructions><![CDATA[<h3>WordPress Honeypot &amp; Threat Intelligence v1.4.0</h3><p>Модуль перехватывает атаки ботов, имитируя WordPress 6.x, защищает от брутфорса, утечек sensitive файлов и вебшеллов. Управление режимами нейтрализации, векторами перехвата и экспорт фида угроз доступны в панели управления DLE в разделе <b>WordPress Honeypot</b>.</p>]]></instructions>
 	<mnotice><![CDATA[]]></mnotice>
 	<file name="engine/init.php">
 		<operation action="after">
 			<searchcode><![CDATA[include_once (DLEPlugins::Check(ENGINE_DIR . '/modules/functions.php'));]]></searchcode>
-			<replacecode><![CDATA[// WordPress Honeypot Virtual Route Interceptor
+			<replacecode><![CDATA[// WordPress Honeypot & Threat Intelligence Virtual Route Interceptor
 if (isset($_SERVER['REQUEST_URI'])) {
-    $honeypotUri = $_SERVER['REQUEST_URI'];
-    if (strpos($honeypotUri, '/wp-json/wp/v2/users') !== false) {
+    $hpUri = $_SERVER['REQUEST_URI'];
+    if (
+        strpos($hpUri, '/wp-') !== false ||
+        strpos($hpUri, '/xmlrpc') !== false ||
+        strpos($hpUri, '/honeypot-feed') !== false ||
+        strpos($hpUri, '/trap-spider') !== false ||
+        strpos($hpUri, '/.env') !== false ||
+        strpos($hpUri, '/.git') !== false ||
+        strpos($hpUri, '.sql') !== false ||
+        strpos($hpUri, '.bak') !== false
+    ) {
         require_once DLEPlugins::Check(ENGINE_DIR . '/modules/honeypot.php');
-        SiteHoneypot::logAttack('WP_REST_ENUM', ['action' => 'FAKE_JSON_USERS']);
-        header('Content-Type: application/json; charset=UTF-8');
-        echo json_encode([['id' => 1, 'name' => 'admin', 'slug' => 'admin']]);
-        exit;
+        if (SiteHoneypot::handleRoute($hpUri)) {
+            exit;
+        }
     }
+}]]></replacecode>
+		</operation>
+	</file>
+	<file name="engine/modules/main.php">
+		<operation action="before">
+			<searchcode><![CDATA[echo $tpl->result['main'];]]></searchcode>
+			<replacecode><![CDATA[// WordPress Honeypot Spider Trap Injection
+if (file_exists(ENGINE_DIR . '/modules/honeypot.php')) {
+    require_once DLEPlugins::Check(ENGINE_DIR . '/modules/honeypot.php');
+    $tpl->result['main'] = SiteHoneypot::injectSpiderTrap($tpl->result['main']);
 }]]></replacecode>
 		</operation>
 	</file>

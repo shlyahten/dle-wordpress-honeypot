@@ -19,25 +19,56 @@ if (!defined('ENGINE_DIR')) {
 
 class SiteHoneypot
 {
-    private static $configFile = ENGINE_DIR . '/data/honeypot_config.json';
-    private static $logFile    = ENGINE_DIR . '/data/honeypot.log';
-    private static $gzipFile   = ROOT_DIR . '/wp-admin/admin.gzip';
+    private static $configFile   = ENGINE_DIR . '/data/honeypot_config.json';
+    private static $logFile      = ENGINE_DIR . '/data/honeypot.log';
+    private static $gzipFile     = ROOT_DIR . '/wp-admin/admin.gzip';
+    private static $quarantineDir = ENGINE_DIR . '/data/quarantine';
 
     /**
-     * Get or initialize configuration
+     * Get or initialize configuration with comprehensive v1.4.0 defaults
      */
     public static function getConfig(): array
     {
         $defaultConfig = [
-            'mode'           => 'hybrid', // 'hybrid' | 'bomb' | 'tarpit' | 'deception'
+            'mode'           => 'hybrid', // 'hybrid' | 'bomb' | 'tarpit' | 'sinkhole' | 'ssrf' | 'loop' | 'deception'
             'tarpit_seconds' => 15,
             'log_enabled'    => true,
-            'block_in_dle'   => false,
+            'log_max_lines'  => 2000,
+
+            // Active attack vectors
+            'vectors' => [
+                'wp_login'         => true,
+                'wp_admin'         => true,
+                'wp_xmlrpc'        => true,
+                'wp_rest_users'    => true,
+                'sensitive_files'  => true,
+                'spider_trap'      => true,
+                'webshell_catcher' => true,
+                'dle_admin'        => false,
+            ],
+
+            // Automated DLE Ban
+            'autoban_enabled'   => true,
+            'autoban_threshold' => 3,
+            'autoban_days'      => 0, // 0 = permanent
+
+            // Dynamic Threat Intelligence Feed
+            'feed_enabled' => true,
+            'feed_token'   => 'hp_' . bin2hex(random_bytes(12)),
+            'feed_format'  => 'plain', // 'plain' | 'nginx'
+
+            // AbuseIPDB reporting
+            'abuseipdb_enabled' => false,
+            'abuseipdb_key'     => '',
         ];
 
         if (file_exists(self::$configFile)) {
             $data = @json_decode(file_get_contents(self::$configFile), true);
             if (is_array($data)) {
+                // Recursive merge for nested structures like 'vectors'
+                if (isset($data['vectors']) && is_array($data['vectors'])) {
+                    $data['vectors'] = array_merge($defaultConfig['vectors'], $data['vectors']);
+                }
                 return array_merge($defaultConfig, $data);
             }
         }
@@ -46,11 +77,14 @@ class SiteHoneypot
     }
 
     /**
-     * Save configuration
+     * Save configuration safely to disk
      */
     public static function saveConfig(array $config): bool
     {
         $existing = self::getConfig();
+        if (isset($config['vectors']) && is_array($config['vectors'])) {
+            $config['vectors'] = array_merge($existing['vectors'] ?? [], $config['vectors']);
+        }
         $merged = array_merge($existing, $config);
         return (bool) @file_put_contents(
             self::$configFile,
@@ -110,7 +144,7 @@ class SiteHoneypot
     }
 
     /**
-     * Write attack log entry safely with rotation
+     * Write attack log entry safely with rotation and autoban check
      */
     public static function logAttack(string $type, array $data = []): void
     {
@@ -137,24 +171,147 @@ class SiteHoneypot
 
         // Simple log rotation if larger than 5MB
         if (@filesize(self::$logFile) > 5 * 1024 * 1024) {
-            self::rotateLog();
+            self::rotateLog((int)($config['log_max_lines'] ?? 2000));
+        }
+
+        // Check for automated DLE ban threshold
+        if (!empty($config['autoban_enabled'])) {
+            self::checkAutoBan($ip, $type, $config);
         }
     }
 
     /**
-     * Rotate log keeping the last 2000 lines
+     * Rotate log keeping the last N lines
      */
-    private static function rotateLog(): void
+    private static function rotateLog(int $maxLines = 2000): void
     {
         if (!file_exists(self::$logFile)) {
             return;
         }
 
         $lines = @file(self::$logFile);
-        if ($lines && count($lines) > 2000) {
-            $keep = array_slice($lines, -2000);
+        if ($lines && count($lines) > $maxLines) {
+            $keep = array_slice($lines, -$maxLines);
             @file_put_contents(self::$logFile, implode('', $keep), LOCK_EX);
         }
+    }
+
+    /**
+     * Fast reader for the last N lines of a file without loading entire file in memory
+     */
+    private static function readTailLines(string $file, int $linesCount = 200): array
+    {
+        if (!file_exists($file)) {
+            return [];
+        }
+        $fileSize = @filesize($file);
+        if (!$fileSize) {
+            return [];
+        }
+
+        $f = @fopen($file, 'rb');
+        if (!$f) {
+            return [];
+        }
+
+        $seek = min(65536, $fileSize);
+        fseek($f, -$seek, SEEK_END);
+        $chunk = fread($f, $seek);
+        fclose($f);
+
+        $split = explode("\n", $chunk);
+        return array_slice($split, -$linesCount);
+    }
+
+    /**
+     * Check if an IP exceeded the attack threshold and ban in DLE
+     */
+    public static function checkAutoBan(string $ip, string $type, array $config): bool
+    {
+        if ($ip === '127.0.0.1' || $ip === '::1' || self::isSearchEngine()) {
+            return false;
+        }
+
+        $threshold = max(1, intval($config['autoban_threshold'] ?? 3));
+        if (!file_exists(self::$logFile)) {
+            return false;
+        }
+
+        $lines = self::readTailLines(self::$logFile, 200);
+        $ipCount = 0;
+        foreach ($lines as $line) {
+            if (strpos($line, "IP: {$ip} ") !== false) {
+                $ipCount++;
+                if ($ipCount >= $threshold) {
+                    break;
+                }
+            }
+        }
+
+        if ($ipCount >= $threshold) {
+            $days = intval($config['autoban_days'] ?? 0);
+            $reason = "Honeypot auto-ban after {$ipCount} attacks ({$type})";
+            return self::banIpInDle($ip, $days, $reason);
+        }
+
+        return false;
+    }
+
+    /**
+     * Ban IP in DLE ({prefix}_banned table) and invalidate cached banned.json
+     */
+    public static function banIpInDle(string $ip, int $days = 0, string $reason = 'WordPress Honeypot auto-ban'): bool
+    {
+        if (!filter_var($ip, FILTER_VALIDATE_IP)) {
+            return false;
+        }
+
+        global $db;
+
+        if (isset($db) && is_object($db) && method_exists($db, 'query')) {
+            $prefix = defined('USERPREFIX') ? USERPREFIX : (defined('PREFIX') ? PREFIX : 'dle');
+            $ipSafe = $db->safesql($ip);
+            $row = $db->super_query("SELECT id FROM " . $prefix . "_banned WHERE ip = '{$ipSafe}'");
+            if (!$row || empty($row['id'])) {
+                $reasonSafe = $db->safesql($reason);
+                $db->query("INSERT INTO " . $prefix . "_banned (descr, date, days, ip, banned_from) VALUES ('{$reasonSafe}', '0', '{$days}', '{$ipSafe}', 'Honeypot')");
+                @unlink(ENGINE_DIR . '/cache/system/banned.json');
+                self::triggerAbuseIpDb($ip, $reason);
+                return true;
+            }
+            return false;
+        }
+
+        // Standalone PDO fallback when DLE $db is not initialized
+        $dbConfigFile = ENGINE_DIR . '/data/dbconfig.php';
+        if (!file_exists($dbConfigFile)) {
+            return false;
+        }
+        @include_once $dbConfigFile;
+        if (!defined('DBHOST') || !defined('DBNAME') || !defined('DBUSER') || !defined('DBPASS')) {
+            return false;
+        }
+
+        try {
+            $pdo = new PDO('mysql:host=' . DBHOST . ';dbname=' . DBNAME . ';charset=utf8mb4', DBUSER, DBPASS, [
+                PDO::ATTR_ERRMODE => PDO::ERRMODE_SILENT,
+                PDO::ATTR_TIMEOUT => 3,
+            ]);
+            $prefix = defined('PREFIX') ? PREFIX : 'dle';
+            $stmt = $pdo->prepare("SELECT id FROM {$prefix}_banned WHERE ip = ?");
+            $stmt->execute([$ip]);
+            if (!$stmt->fetch()) {
+                $ins = $pdo->prepare("INSERT INTO {$prefix}_banned (descr, date, days, ip, banned_from) VALUES (?, '0', ?, ?, 'Honeypot')");
+                $ins->execute([$reason, $days, $ip]);
+                @unlink(ENGINE_DIR . '/cache/system/banned.json');
+                self::triggerAbuseIpDb($ip, $reason);
+                return true;
+            }
+        } catch (\Throwable $e) {
+            return false;
+        }
+
+        return false;
     }
 
     /**
@@ -265,6 +422,28 @@ class SiteHoneypot
     }
 
     /**
+     * Get all unique attacker IPs from log
+     */
+    public static function getAllUniqueIps(): array
+    {
+        if (!file_exists(self::$logFile)) {
+            return [];
+        }
+        $lines = @file(self::$logFile, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+        if (!$lines) {
+            return [];
+        }
+        $ips = [];
+        $pattern = '/IP: ([a-f0-9\.:]+) /i';
+        foreach ($lines as $line) {
+            if (preg_match($pattern, $line, $m)) {
+                $ips[$m[1]] = true;
+            }
+        }
+        return array_keys($ips);
+    }
+
+    /**
      * Clear attack log
      */
     public static function clearLog(): bool
@@ -275,8 +454,14 @@ class SiteHoneypot
         return true;
     }
 
+    /*
+    -----------------------------------------------------
+     Active Defense Sanction Mechanisms
+    -----------------------------------------------------
+    */
+
     /**
-     * Detonate gzip bomb if client supports gzip, otherwise serve standard block
+     * Detonate gzip bomb if client supports gzip, otherwise serve standard 403
      */
     public static function serveGzipBomb(): void
     {
@@ -313,7 +498,6 @@ class SiteHoneypot
             }
         }
 
-        // If client doesn't accept gzip, don't waste 10MB of bandwidth!
         http_response_code(403);
         header("Content-Type: text/html; charset=UTF-8");
         echo '<!DOCTYPE html><html><head><title>403 Forbidden</title></head><body><h1>403 Forbidden</h1><p>Access denied.</p></body></html>';
@@ -346,6 +530,513 @@ class SiteHoneypot
         echo "0\r\n\r\n";
         exit;
     }
+
+    /**
+     * Endless Chunked Sinkhole — streams indefinite chunks to tie up scanner workers
+     */
+    public static function serveChunkedSinkhole(): void
+    {
+        @ini_set('output_buffering', 'off');
+        @ini_set('zlib.output_compression', 'off');
+        @ini_set('max_execution_time', '180');
+        while (ob_get_level()) {
+            ob_end_clean();
+        }
+
+        http_response_code(200);
+        header("Content-Type: text/html; charset=UTF-8");
+        header("Transfer-Encoding: chunked");
+        header("X-Accel-Buffering: no");
+        header("Cache-Control: no-cache, no-store, must-revalidate");
+
+        $start = time();
+        while (time() - $start < 120) {
+            if (connection_aborted()) {
+                break;
+            }
+            $chunk = dechex(16) . "\r\n" . bin2hex(random_bytes(8)) . "\r\n";
+            echo $chunk;
+            @flush();
+            sleep(2);
+        }
+
+        echo "0\r\n\r\n";
+        exit;
+    }
+
+    /**
+     * SSRF Reflection — redirects scanners back to internal loopback / metadata service
+     */
+    public static function serveSsrfReflection(): void
+    {
+        $targets = [
+            'http://127.0.0.1:80/',
+            'http://localhost:8080/',
+            'http://169.254.169.254/latest/meta-data/',
+        ];
+        $target = $targets[array_rand($targets)];
+        header("Location: " . $target, true, 301);
+        header("X-Robots-Tag: noindex, nofollow");
+        echo "Redirecting to internal service: {$target}";
+        exit;
+    }
+
+    /**
+     * Redirect Loop Carousel — traps automated crawlers in an endless redirect loop
+     */
+    public static function serveRedirectLoop(): void
+    {
+        $hop = intval($_GET['hop'] ?? 0) + 1;
+        $uri = strtok($_SERVER['REQUEST_URI'] ?? '/wp-login.php', '?');
+        $next = $uri . '?hop=' . $hop . '&_rnd=' . substr(md5(microtime()), 0, 8);
+        header("Location: " . $next, true, 302);
+        header("X-Robots-Tag: noindex, nofollow");
+        echo "Redirecting to step {$hop}...";
+        exit;
+    }
+
+    /**
+     * Deception response — realistic errors, fake canary configs, or login forms
+     */
+    public static function serveDeception(string $context = 'wp', array $meta = []): void
+    {
+        if ($context === 'wp') {
+            self::renderLoginForm('ОШИБКА: Неверное имя пользователя или пароль.');
+            return;
+        }
+
+        if ($context === 'dle') {
+            self::renderDleAdminForm('Неверное имя пользователя или пароль.');
+            return;
+        }
+
+        if ($context === 'sensitive') {
+            $path = $meta['path'] ?? '';
+            header("X-Robots-Tag: noindex, nofollow");
+
+            if (strpos($path, '.env') !== false) {
+                header("Content-Type: text/plain; charset=UTF-8");
+                echo "APP_NAME=DataLifeEngine\n";
+                echo "APP_ENV=production\n";
+                echo "APP_KEY=base64:c2hseWFodGVuX2NhbmFyeV90b2tlbl9rZXlfOTk4ODc3NjY1NQ==\n";
+                echo "APP_DEBUG=false\n";
+                echo "DB_CONNECTION=mysql\n";
+                echo "DB_HOST=127.0.0.1\n";
+                echo "DB_PORT=3306\n";
+                echo "DB_DATABASE=db_backup_production\n";
+                echo "DB_USERNAME=admin_canary\n";
+                echo "DB_PASSWORD=canary_token_trap_p@ssw0rd_982341\n";
+                echo "AWS_ACCESS_KEY_ID=AKIAIOSFODNN7CANARY\n";
+                echo "AWS_SECRET_ACCESS_KEY=wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY\n";
+                exit;
+            }
+
+            if (strpos($path, '.git') !== false) {
+                header("Content-Type: text/plain; charset=UTF-8");
+                echo "[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n[remote \"origin\"]\n\turl = https://gitlab.internal-local.net/infra/canary-repo.git\n\tfetch = +refs/heads/*:refs/remotes/origin/*\n[branch \"main\"]\n\tremote = origin\n\tmerge = refs/heads/main\n";
+                exit;
+            }
+
+            if (strpos($path, '.sql') !== false) {
+                header("Content-Type: text/plain; charset=UTF-8");
+                echo "-- MySQL dump 10.13  Distrib 8.0.35\n-- Host: localhost    Database: canary_trap\n-- Canary honeypot dump\nDROP TABLE IF EXISTS `users`;\nCREATE TABLE `users` (`id` int, `username` varchar(50), `password_hash` varchar(255));\nINSERT INTO `users` VALUES (1,'canary_admin','$2y$10$e8Vj5iG8P6r8xYnB2m0qNu/8s/VzY8HkQ0k2Vv.7wP.8yN3h9Q5q6');\n";
+                exit;
+            }
+
+            // Fallback 403
+            http_response_code(403);
+            header("Content-Type: text/plain; charset=UTF-8");
+            echo "Access Denied.";
+            exit;
+        }
+
+        // Generic fallback
+        http_response_code(403);
+        header("Content-Type: text/html; charset=UTF-8");
+        echo "403 Forbidden";
+        exit;
+    }
+
+    /**
+     * Unified sanction dispatcher
+     */
+    public static function executeSanction(string $context = 'wp', array $meta = []): void
+    {
+        $config = self::getConfig();
+        $mode = $config['mode'] ?? 'hybrid';
+
+        switch ($mode) {
+            case 'bomb':
+                self::serveGzipBomb();
+                break;
+            case 'tarpit':
+                self::serveTarpit((int)($config['tarpit_seconds'] ?? 15));
+                break;
+            case 'sinkhole':
+                self::serveChunkedSinkhole();
+                break;
+            case 'ssrf':
+                self::serveSsrfReflection();
+                break;
+            case 'loop':
+                self::serveRedirectLoop();
+                break;
+            case 'deception':
+                self::serveDeception($context, $meta);
+                break;
+            case 'hybrid':
+            default:
+                $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
+                if ($method === 'POST') {
+                    self::serveGzipBomb();
+                } else {
+                    self::serveDeception($context, $meta);
+                }
+                break;
+        }
+    }
+
+    /*
+    -----------------------------------------------------
+     Dynamic Threat Intelligence Feed & AbuseIPDB
+    -----------------------------------------------------
+    */
+
+    /**
+     * Serve Dynamic IP Blocklist Feed for Nginx, Fail2ban, Mikrotik or firewalls
+     */
+    public static function serveBlocklistFeed(?string $token = null): void
+    {
+        $config = self::getConfig();
+        if (empty($config['feed_enabled'])) {
+            http_response_code(404);
+            header("Content-Type: text/plain; charset=UTF-8");
+            echo "Threat feed disabled.";
+            exit;
+        }
+
+        $expectedToken = $config['feed_token'] ?? '';
+        if (empty($expectedToken) || !hash_equals((string)$expectedToken, (string)$token)) {
+            http_response_code(403);
+            header("Content-Type: text/plain; charset=UTF-8");
+            echo "Access denied: invalid feed token.";
+            exit;
+        }
+
+        $ips = self::getAllUniqueIps();
+        $format = $config['feed_format'] ?? 'plain';
+
+        header("Content-Type: text/plain; charset=UTF-8");
+        header("Cache-Control: no-cache, no-store, must-revalidate");
+        header("X-Robots-Tag: noindex, nofollow");
+
+        $date = date('Y-m-d H:i:s T');
+        echo "# DLE Honeypot Threat Intelligence Feed\n";
+        echo "# Generated: {$date}\n";
+        echo "# Total Unique Malicious IPs: " . count($ips) . "\n\n";
+
+        foreach ($ips as $ip) {
+            if (!filter_var($ip, FILTER_VALIDATE_IP)) {
+                continue;
+            }
+            if ($format === 'nginx') {
+                echo "deny {$ip};\n";
+            } else {
+                echo "{$ip}\n";
+            }
+        }
+        exit;
+    }
+
+    /**
+     * Send automated report to AbuseIPDB API v2
+     */
+    public static function triggerAbuseIpDb(string $ip, string $comment): void
+    {
+        $config = self::getConfig();
+        if (empty($config['abuseipdb_enabled']) || empty($config['abuseipdb_key'])) {
+            return;
+        }
+
+        $apiKey = trim($config['abuseipdb_key']);
+        $url = 'https://api.abuseipdb.com/api/v2/report';
+        $postData = [
+            'ip' => $ip,
+            'categories' => '18,21',
+            'comment' => 'Automated report from DLE WordPress Honeypot: ' . substr($comment, 0, 200),
+        ];
+
+        if (function_exists('curl_init')) {
+            $ch = curl_init($url);
+            curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+            curl_setopt($ch, CURLOPT_POST, true);
+            curl_setopt($ch, CURLOPT_POSTFIELDS, http_build_query($postData));
+            curl_setopt($ch, CURLOPT_HTTPHEADER, [
+                'Key: ' . $apiKey,
+                'Accept: application/json',
+            ]);
+            curl_setopt($ch, CURLOPT_TIMEOUT, 2);
+            curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 2);
+            curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, true);
+            @curl_exec($ch);
+            @curl_close($ch);
+        }
+    }
+
+    /*
+    -----------------------------------------------------
+     Virtual Route Interceptor & Specialized Decoys
+    -----------------------------------------------------
+    */
+
+    /**
+     * Master virtual route dispatcher called from engine/init.php
+     */
+    public static function handleRoute(string $uri): bool
+    {
+        $config = self::getConfig();
+        $vectors = $config['vectors'] ?? [];
+        $path = parse_url($uri, PHP_URL_PATH) ?? $uri;
+
+        // 1. Dynamic Blocklist Feed
+        if (strpos($path, '/honeypot-feed.txt') !== false) {
+            if (!empty($config['feed_enabled'])) {
+                self::serveBlocklistFeed($_GET['token'] ?? '');
+                return true;
+            }
+            return false;
+        }
+
+        // 2. Spider Trap Endpoint
+        if (strpos($path, '/trap-spider.html') !== false) {
+            if (!empty($vectors['spider_trap'])) {
+                self::handleSpiderTrap();
+                return true;
+            }
+            return false;
+        }
+
+        // 3. WordPress REST API User Enumeration
+        if (strpos($path, '/wp-json/wp/v2/users') !== false) {
+            if (!empty($vectors['wp_rest_users'])) {
+                self::handleRestUsers();
+                return true;
+            }
+            return false;
+        }
+
+        // 4. Sensitive & Backup Files Trap
+        if (
+            strpos($path, '/.env') !== false ||
+            strpos($path, '/.git/config') !== false ||
+            strpos($path, '/.git/HEAD') !== false ||
+            (strpos($path, 'wp-config.php') !== false && (strpos($path, '.bak') !== false || strpos($path, '~') !== false || strpos($path, '.save') !== false || strpos($path, '.old') !== false)) ||
+            preg_match('/\/(dump|database|backup|db)\.sql$/i', $path) ||
+            strpos($path, '/config.json.bak') !== false
+        ) {
+            if (!empty($vectors['sensitive_files'])) {
+                self::handleSensitiveFiles($path);
+                return true;
+            }
+            return false;
+        }
+
+        // 5. Webshell Catcher & Quarantine
+        if (strpos($path, '/wp-admin/async-upload.php') !== false || strpos($path, '/wp-includes/upload.php') !== false) {
+            if (!empty($vectors['webshell_catcher'])) {
+                self::handleWebshellCatcher();
+                return true;
+            }
+            return false;
+        }
+
+        // 6. Virtual route fallbacks for wp-login.php, wp-admin/, xmlrpc.php
+        if (strpos($path, '/wp-login.php') !== false) {
+            if (!empty($vectors['wp_login'])) {
+                self::handle('wp-login');
+                return true;
+            }
+            return false;
+        }
+
+        if (strpos($path, '/xmlrpc.php') !== false) {
+            if (!empty($vectors['wp_xmlrpc'])) {
+                self::handle('xmlrpc');
+                return true;
+            }
+            return false;
+        }
+
+        if (strpos($path, '/wp-admin') !== false) {
+            if (!empty($vectors['wp_admin'])) {
+                self::handle('wp-admin');
+                return true;
+            }
+            return false;
+        }
+
+        return false;
+    }
+
+    /**
+     * Inject invisible spider trap link into public page HTML
+     */
+    public static function injectSpiderTrap(string $html): string
+    {
+        $config = self::getConfig();
+        $vectors = $config['vectors'] ?? [];
+        if (empty($vectors['spider_trap'])) {
+            return $html;
+        }
+
+        $trapLink = '<a href="/trap-spider.html" rel="nofollow" style="display:none!important;visibility:hidden;position:absolute;left:-9999px;" aria-hidden="true">Site Map Archive</a>';
+
+        if (stripos($html, '</body>') !== false) {
+            return str_ireplace('</body>', $trapLink . "\n</body>", $html);
+        }
+
+        return $html . "\n" . $trapLink;
+    }
+
+    /**
+     * Handle spider trap activation
+     */
+    public static function handleSpiderTrap(): void
+    {
+        if (self::isSearchEngine()) {
+            http_response_code(404);
+            header("X-Robots-Tag: noindex, nofollow");
+            echo "Not Found";
+            exit;
+        }
+
+        self::logAttack('SPIDER_TRAP', ['action' => 'BOT_TRAPPED']);
+        self::executeSanction('spider');
+        exit;
+    }
+
+    /**
+     * Handle WordPress REST API user enumeration decoy
+     */
+    public static function handleRestUsers(): void
+    {
+        if (self::isSearchEngine()) {
+            http_response_code(404);
+            header("X-Robots-Tag: noindex, nofollow");
+            echo "Not Found";
+            exit;
+        }
+
+        self::logAttack('WP_REST_ENUM', ['action' => 'FAKE_JSON_USERS']);
+
+        $config = self::getConfig();
+        $mode = $config['mode'] ?? 'hybrid';
+        if ($mode === 'bomb') {
+            self::serveGzipBomb();
+        } elseif ($mode === 'tarpit') {
+            self::serveTarpit((int)($config['tarpit_seconds'] ?? 15));
+        } elseif ($mode === 'sinkhole') {
+            self::serveChunkedSinkhole();
+        } elseif ($mode === 'ssrf') {
+            self::serveSsrfReflection();
+        }
+
+        header('Content-Type: application/json; charset=UTF-8');
+        header('X-Robots-Tag: noindex, nofollow');
+        echo json_encode([
+            [
+                'id' => 1,
+                'name' => 'admin',
+                'url' => '',
+                'description' => '',
+                'link' => '/author/admin/',
+                'slug' => 'admin',
+                'avatar_urls' => [
+                    '24' => 'https://secure.gravatar.com/avatar/?s=24&d=mm&r=g',
+                    '48' => 'https://secure.gravatar.com/avatar/?s=48&d=mm&r=g',
+                    '96' => 'https://secure.gravatar.com/avatar/?s=96&d=mm&r=g'
+                ]
+            ]
+        ], JSON_UNESCAPED_SLASHES);
+        exit;
+    }
+
+    /**
+     * Handle probing of sensitive backup, .env or repository files
+     */
+    public static function handleSensitiveFiles(string $path): void
+    {
+        if (self::isSearchEngine()) {
+            http_response_code(404);
+            header("X-Robots-Tag: noindex, nofollow");
+            echo "Not Found";
+            exit;
+        }
+
+        self::logAttack('SENSITIVE_FILE_PROBE', ['action' => 'CANARY_TRIGGER', 'user' => '-', 'pass' => '-']);
+        self::executeSanction('sensitive', ['path' => $path]);
+        exit;
+    }
+
+    /**
+     * Handle decoy webshell upload endpoints with secure file quarantine
+     */
+    public static function handleWebshellCatcher(): void
+    {
+        if (self::isSearchEngine()) {
+            http_response_code(404);
+            header("X-Robots-Tag: noindex, nofollow");
+            echo "Not Found";
+            exit;
+        }
+
+        // Initialize quarantine directory with strict protection
+        if (!is_dir(self::$quarantineDir)) {
+            @mkdir(self::$quarantineDir, 0750, true);
+            $htaccess = "Order Deny,Allow\nDeny from all\nOptions -ExecCGI -Indexes\nRemoveHandler .php .phtml .php3 .php4 .php5 .php7 .phps .cgi .pl .py .asp .jsp .sh\n";
+            @file_put_contents(self::$quarantineDir . '/.htaccess', $htaccess, LOCK_EX);
+            @file_put_contents(self::$quarantineDir . '/index.html', '', LOCK_EX);
+        }
+
+        $quarantined = false;
+        $fileInfo = ['name' => '-', 'hash' => '-'];
+
+        if (!empty($_FILES)) {
+            foreach ($_FILES as $file) {
+                if (!empty($file['tmp_name']) && is_uploaded_file($file['tmp_name'])) {
+                    $origName = preg_replace('/[^a-zA-Z0-9._-]/', '_', basename($file['name']));
+                    $hash = hash_file('sha256', $file['tmp_name']);
+                    $destName = date('Ymd_His_') . bin2hex(random_bytes(4)) . '_' . $origName . '.quarantine';
+                    $destPath = self::$quarantineDir . '/' . $destName;
+
+                    if (@move_uploaded_file($file['tmp_name'], $destPath)) {
+                        @chmod($destPath, 0600);
+                        $quarantined = true;
+                        $fileInfo = ['name' => $origName, 'hash' => $hash];
+                    }
+                }
+            }
+        }
+
+        self::logAttack('WEBSHELL_UPLOAD', [
+            'user'   => $fileInfo['name'],
+            'pass'   => $fileInfo['hash'],
+            'action' => $quarantined ? 'QUARANTINED' : 'PROBE',
+        ]);
+
+        self::executeSanction('webshell');
+
+        // Deceptive fallback for async-upload.php
+        header('Content-Type: application/json; charset=UTF-8');
+        echo json_encode(['success' => false, 'data' => ['message' => 'Upload failed. Invalid security token.']]);
+        exit;
+    }
+
+    /*
+    -----------------------------------------------------
+     Authentic Decoy Login Pages (WP & DLE)
+    -----------------------------------------------------
+    */
 
     /**
      * Render authentic WordPress 6.x Login Form
@@ -636,11 +1327,9 @@ HTML;
         $adminPath = $dleConfig['admin_path'] ?? 'admin.php';
 
         if ($enable) {
-            // Failsafe: Cannot enable if admin_path is still default admin.php
             if ($adminPath === 'admin.php' || empty($adminPath)) {
                 return false;
             }
-            // Failsafe: Cannot enable if renamed real admin file does not exist
             if (!file_exists($root . '/' . $adminPath)) {
                 return false;
             }
@@ -649,11 +1338,10 @@ HTML;
             @file_put_contents($adminFile, $code, LOCK_EX);
 
             $conf = self::getConfig();
-            $conf['dle_admin_trap'] = true;
+            $conf['vectors']['dle_admin'] = true;
             self::saveConfig($conf);
             return true;
         } else {
-            // Disable: only unlink if file contains our SiteHoneypot signature
             if (file_exists($adminFile)) {
                 $content = @file_get_contents($adminFile);
                 if ($content !== false && strpos($content, 'SiteHoneypot') !== false) {
@@ -661,7 +1349,7 @@ HTML;
                 }
             }
             $conf = self::getConfig();
-            $conf['dle_admin_trap'] = false;
+            $conf['vectors']['dle_admin'] = false;
             self::saveConfig($conf);
             return true;
         }
@@ -688,7 +1376,6 @@ HTML;
             exit;
         }
 
-        // On POST: parse payload to inspect what the attacker is probing
         $rawPost = @file_get_contents('php://input');
         $probedMethod = 'unknown';
         $user = '-';
@@ -698,7 +1385,6 @@ HTML;
             if (preg_match('/<methodName>(.*?)<\/methodName>/i', $rawPost, $m)) {
                 $probedMethod = trim($m[1]);
             }
-            // Check for credentials in multicall or wp.getUsersBlogs
             if (preg_match_all('/<string>(.*?)<\/string>/i', $rawPost, $matches)) {
                 $strings = $matches[1];
                 if (count($strings) >= 2) {
@@ -714,18 +1400,8 @@ HTML;
             'action' => 'XMLRPC:' . $probedMethod,
         ]);
 
-        $config = self::getConfig();
-        $mode = $config['mode'] ?? 'hybrid';
+        self::executeSanction('xmlrpc');
 
-        if ($mode === 'tarpit') {
-            self::serveTarpit((int) ($config['tarpit_seconds'] ?? 15));
-        }
-
-        if ($mode === 'bomb' || $mode === 'hybrid') {
-            self::serveGzipBomb();
-        }
-
-        // Realistic XML-RPC fault
         header("Content-Type: text/xml; charset=UTF-8");
         echo <<<XML
 <?xml version="1.0" encoding="UTF-8"?>
@@ -754,7 +1430,6 @@ XML;
      */
     public static function handle(string $endpoint): void
     {
-        // 1. Search engine protection: always serve clean 404 to legitimate search crawlers
         if (self::isSearchEngine()) {
             http_response_code(404);
             header("X-Robots-Tag: noindex, nofollow");
@@ -762,37 +1437,43 @@ XML;
             exit;
         }
 
-        $config = self::getConfig();
-        $mode   = $config['mode'] ?? 'hybrid';
         $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
 
-        // 2. Handle /wp-admin/ redirect
+        // 1. Handle /wp-admin/ redirect
         if ($endpoint === 'wp-admin') {
             self::logAttack('WP_ADMIN_PROBE', ['action' => 'REDIRECT_302']);
             header("Location: /wp-login.php?redirect_to=%2Fwp-admin%2F&reauth=1", true, 302);
             exit;
         }
 
-        // 3. Handle XML-RPC
+        // 2. Handle XML-RPC
         if ($endpoint === 'xmlrpc') {
             self::handleXMLRPC();
             return;
         }
 
-        // 4. Handle /wp-login.php
+        // 3. Handle /wp-login.php
         if ($endpoint === 'wp-login') {
             if ($method === 'GET') {
+                $config = self::getConfig();
+                $mode = $config['mode'] ?? 'hybrid';
                 if ($mode === 'bomb') {
                     self::logAttack('LOGIN_GET', ['action' => 'GZIP_BOMB']);
                     self::serveGzipBomb();
-                }
-
-                if ($mode === 'tarpit') {
+                } elseif ($mode === 'tarpit') {
                     self::logAttack('LOGIN_GET', ['action' => 'TARPIT']);
-                    self::serveTarpit((int) ($config['tarpit_seconds'] ?? 15));
+                    self::serveTarpit((int)($config['tarpit_seconds'] ?? 15));
+                } elseif ($mode === 'sinkhole') {
+                    self::logAttack('LOGIN_GET', ['action' => 'SINKHOLE']);
+                    self::serveChunkedSinkhole();
+                } elseif ($mode === 'ssrf') {
+                    self::logAttack('LOGIN_GET', ['action' => 'SSRF']);
+                    self::serveSsrfReflection();
+                } elseif ($mode === 'loop') {
+                    self::logAttack('LOGIN_GET', ['action' => 'REDIRECT_LOOP']);
+                    self::serveRedirectLoop();
                 }
 
-                // Default hybrid & deception: render authentic WordPress login page
                 self::renderLoginForm();
                 return;
             }
@@ -807,25 +1488,13 @@ XML;
                     'action' => 'HARVEST_CREDENTIALS',
                 ]);
 
-                if ($mode === 'tarpit') {
-                    self::serveTarpit((int) ($config['tarpit_seconds'] ?? 15));
-                }
-
-                if ($mode === 'hybrid' || $mode === 'bomb') {
-                    // Detonate gzip bomb
-                    self::serveGzipBomb();
-                }
-
-                // Deception fallback: show authentic WP error
-                $errorMsg = 'ОШИБКА: Неверное имя пользователя или пароль. Потеряли пароль?';
-                self::renderLoginForm($errorMsg);
+                self::executeSanction('wp');
                 return;
             }
         }
 
-        // 5. Handle /admin.php (DLE Admin Decoy Trap)
+        // 4. Handle /admin.php (DLE Admin Decoy Trap)
         if ($endpoint === 'dle-admin') {
-            // Safety failsafe: if real admin is admin.php or not renamed, abort immediately
             $dleConfigFile = dirname(__DIR__) . '/data/config.php';
             $dleConfig = [];
             if (file_exists($dleConfigFile)) {
@@ -840,14 +1509,23 @@ XML;
             }
 
             if ($method === 'GET') {
+                $config = self::getConfig();
+                $mode = $config['mode'] ?? 'hybrid';
                 if ($mode === 'bomb') {
                     self::logAttack('DLE_ADMIN_GET', ['action' => 'GZIP_BOMB']);
                     self::serveGzipBomb();
-                }
-
-                if ($mode === 'tarpit') {
+                } elseif ($mode === 'tarpit') {
                     self::logAttack('DLE_ADMIN_GET', ['action' => 'TARPIT']);
-                    self::serveTarpit((int) ($config['tarpit_seconds'] ?? 15));
+                    self::serveTarpit((int)($config['tarpit_seconds'] ?? 15));
+                } elseif ($mode === 'sinkhole') {
+                    self::logAttack('DLE_ADMIN_GET', ['action' => 'SINKHOLE']);
+                    self::serveChunkedSinkhole();
+                } elseif ($mode === 'ssrf') {
+                    self::logAttack('DLE_ADMIN_GET', ['action' => 'SSRF']);
+                    self::serveSsrfReflection();
+                } elseif ($mode === 'loop') {
+                    self::logAttack('DLE_ADMIN_GET', ['action' => 'REDIRECT_LOOP']);
+                    self::serveRedirectLoop();
                 }
 
                 self::renderDleAdminForm();
@@ -864,21 +1542,11 @@ XML;
                     'action' => 'HARVEST_CREDENTIALS',
                 ]);
 
-                if ($mode === 'tarpit') {
-                    self::serveTarpit((int) ($config['tarpit_seconds'] ?? 15));
-                }
-
-                if ($mode === 'hybrid' || $mode === 'bomb') {
-                    self::serveGzipBomb();
-                }
-
-                // Deception fallback: show authentic DLE login error
-                self::renderDleAdminForm('Неверное имя пользователя или пароль.');
+                self::executeSanction('dle');
                 return;
             }
         }
 
-        // Generic fallback
         http_response_code(404);
         echo "Not Found";
         exit;

@@ -1,6 +1,6 @@
 <?php
 /**
- * Automated Test Suite for WordPress Honeypot Plugin
+ * Automated Test Suite for WordPress Honeypot Plugin v1.4.0
  */
 
 $repoDir = dirname(__DIR__);
@@ -20,7 +20,7 @@ function assertTest(string $name, bool $condition, string $details = '') {
     }
 }
 
-echo "=== Honeypot Automated Test Suite ===\n\n";
+echo "=== Honeypot Automated Test Suite v1.4.0 ===\n\n";
 
 // 1. Search Engine Crawler Filter
 echo "1. Тест фильтрации поисковых роботов:\n";
@@ -56,23 +56,27 @@ $configFile  = sys_get_temp_dir() . '/test_config_' . uniqid() . '.json';
 
 file_put_contents($configFile, json_encode(['mode' => 'hybrid', 'log_enabled' => true]));
 
-// Mock log writes directly using SiteHoneypot logic
+// Mock log writes directly using SiteHoneypot format
 $attacks = [
-    ['time' => time() - 30, 'ip' => '203.0.113.1', 'target' => 'WP_LOGIN_AUTH', 'action' => 'AUTH_FAILED', 'login' => 'admin', 'pass' => '123456', 'ua' => 'Hydra'],
-    ['time' => time() - 20, 'ip' => '203.0.113.1', 'target' => 'WP_LOGIN_AUTH', 'action' => 'AUTH_FAILED', 'login' => 'admin', 'pass' => 'password', 'ua' => 'Hydra'],
-    ['time' => time() - 10, 'ip' => '203.0.113.2', 'target' => 'XMLRPC_PINGBACK', 'action' => 'XMLRPC_PINGBACK', 'login' => '', 'pass' => '', 'ua' => 'curl/7.88'],
+    "[2026-11-05 10:00:00] IP: 203.0.113.1 | METHOD: POST | URI: /wp-login.php | LOGIN: admin | PASS: 123456 | ACTION: HARVEST_CREDENTIALS | UA: Hydra\n",
+    "[2026-11-05 10:00:10] IP: 203.0.113.1 | METHOD: POST | URI: /wp-login.php | LOGIN: admin | PASS: password | ACTION: HARVEST_CREDENTIALS | UA: Hydra\n",
+    "[2026-11-05 10:00:20] IP: 203.0.113.2 | METHOD: POST | URI: /xmlrpc.php | LOGIN: - | PASS: - | ACTION: XMLRPC:demo.sayHello | UA: curl/7.88\n",
 ];
 
 foreach ($attacks as $entry) {
-    file_put_contents($testLogFile, json_encode($entry) . "\n", FILE_APPEND | LOCK_EX);
+    file_put_contents($testLogFile, $entry, FILE_APPEND | LOCK_EX);
 }
 
 $lines = file($testLogFile, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
 assertTest("В тестовый лог записано 3 атаки", count($lines) === 3);
 
-$parsed = array_map(function($line) { return json_decode($line, true); }, $lines);
-$uniqueIps = count(array_unique(array_column($parsed, 'ip')));
-assertTest("Уникальных IP-адресов зафиксировано 2", $uniqueIps === 2);
+$parsedIps = [];
+foreach ($lines as $line) {
+    if (preg_match('/IP: ([0-9.]+)/', $line, $m)) {
+        $parsedIps[$m[1]] = true;
+    }
+}
+assertTest("Уникальных IP-адресов зафиксировано 2", count($parsedIps) === 2);
 
 @unlink($testLogFile);
 @unlink($configFile);
@@ -96,7 +100,7 @@ assertTest("XML-RPC GET возвращает текст о POST запросах
 echo "\n6. Тест целостности манифеста плагина:\n";
 $xml = simplexml_load_file($repoDir . '/honeypot-dle-plugin.xml');
 assertTest("Тег <name> корректен", !empty((string)$xml->name));
-assertTest("Тег <version> заполнен", preg_match('/^[0-9]+\.[0-9]+(\.[0-9]+)?$/', (string)$xml->version) === 1);
+assertTest("Тег <version> равен 1.4.0", (string)$xml->version === '1.4.0');
 assertTest("Тег <dleversion> равен 21.0", (string)$xml->dleversion === '21.0');
 assertTest("Тег <upgradeurl> указывает на GitHub Pages", strpos((string)$xml->upgradeurl, 'github.io') !== false);
 assertTest("Секция <mysqlinstall> присутствует", !empty((string)$xml->mysqlinstall));
@@ -109,6 +113,7 @@ assertTest("Секция <phpdelete> присутствует для безоп�
 
 $rawXml = file_get_contents($repoDir . '/honeypot-dle-plugin.xml');
 assertTest("Хук engine/init.php использует include_once", strpos($rawXml, 'include_once (DLEPlugins::Check(ENGINE_DIR . \'/modules/functions.php\'));') !== false);
+assertTest("Хук engine/modules/main.php присутствует для инъекции spider trap", strpos($rawXml, 'name="engine/modules/main.php"') !== false);
 assertTest("Хук engine/ajax/plugins.php использует replacecode", strpos($rawXml, '<replacecode><![CDATA[$data = (strpos($row[\'upgradeurl\'], \'github.io\')') !== false);
 
 // 7. Check for Absence of Hardcoded Domains
@@ -137,14 +142,42 @@ assertTest("Метод renderDleAdminForm существует", method_exists('
 assertTest("Метод isDleAdminTrapActive существует", method_exists('SiteHoneypot', 'isDleAdminTrapActive'));
 assertTest("Метод toggleDleAdminTrap существует", method_exists('SiteHoneypot', 'toggleDleAdminTrap'));
 
-// Test failsafe: toggleDleAdminTrap must reject enabling when real admin is not configured
 $safetyTest = SiteHoneypot::toggleDleAdminTrap(true);
 assertTest("Защитный отказ активации: ловушка не перезаписывает стандартную админку", $safetyTest === false);
 
-// 10. Test ZIP Archive DLE Specification (Topic 21)
+// 10. Test v1.4.0 Active Defense & Sanction Methods
+echo "\n10. Тест методов активной защиты v1.4.0:\n";
+assertTest("Метод serveChunkedSinkhole существует", method_exists('SiteHoneypot', 'serveChunkedSinkhole'));
+assertTest("Метод serveSsrfReflection существует", method_exists('SiteHoneypot', 'serveSsrfReflection'));
+assertTest("Метод serveRedirectLoop существует", method_exists('SiteHoneypot', 'serveRedirectLoop'));
+assertTest("Метод executeSanction существует", method_exists('SiteHoneypot', 'executeSanction'));
+assertTest("Метод handleRoute существует", method_exists('SiteHoneypot', 'handleRoute'));
+assertTest("Метод injectSpiderTrap существует", method_exists('SiteHoneypot', 'injectSpiderTrap'));
+assertTest("Метод serveBlocklistFeed существует", method_exists('SiteHoneypot', 'serveBlocklistFeed'));
+assertTest("Метод handleSensitiveFiles существует", method_exists('SiteHoneypot', 'handleSensitiveFiles'));
+assertTest("Метод handleWebshellCatcher существует", method_exists('SiteHoneypot', 'handleWebshellCatcher'));
+assertTest("Метод banIpInDle существует", method_exists('SiteHoneypot', 'banIpInDle'));
+
+// Test Spider Trap Injection
+$testHtml = '<html><head><title>Test</title></head><body><h1>Content</h1></body></html>';
+$injected = SiteHoneypot::injectSpiderTrap($testHtml);
+assertTest("Spider Trap корректно внедряется перед </body>", strpos($injected, '/trap-spider.html') !== false && strpos($injected, 'display:none') !== false);
+
+// Test Config Structure
+$config = SiteHoneypot::getConfig();
+assertTest("В конфигурации присутствуют attack vectors", isset($config['vectors']) && is_array($config['vectors']));
+assertTest("Вектор wp_login включен по умолчанию", !empty($config['vectors']['wp_login']));
+assertTest("Вектор sensitive_files включен по умолчанию", !empty($config['vectors']['sensitive_files']));
+assertTest("Вектор spider_trap включен по умолчанию", !empty($config['vectors']['spider_trap']));
+assertTest("Вектор webshell_catcher включен по умолчанию", !empty($config['vectors']['webshell_catcher']));
+assertTest("Автобан включен по умолчанию", !empty($config['autoban_enabled']));
+assertTest("Порог автобана задан", intval($config['autoban_threshold']) >= 1);
+assertTest("Секретный токен фида сгенерирован", !empty($config['feed_token']));
+
+// 11. Test ZIP Archive DLE Specification (Topic 21)
 $zipFile = $repoDir . '/dist/dle-wordpress-honeypot.zip';
 if (file_exists($zipFile)) {
-    echo "\n10. Тест соответствия структуры ZIP-архива спецификации DLE:\n";
+    echo "\n11. Тест соответствия структуры ZIP-архива спецификации DLE:\n";
     $zip = new ZipArchive();
     $opened = $zip->open($zipFile);
     assertTest("ZIP архив открывается корректно", $opened === true);
