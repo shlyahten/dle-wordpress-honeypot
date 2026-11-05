@@ -65,6 +65,10 @@ class SiteHoneypot
         if (file_exists(self::$configFile)) {
             $data = @json_decode(file_get_contents(self::$configFile), true);
             if (is_array($data)) {
+                if (empty($data['feed_token'])) {
+                    $data['feed_token'] = $defaultConfig['feed_token'];
+                    @file_put_contents(self::$configFile, json_encode(array_merge($defaultConfig, $data), JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE), LOCK_EX);
+                }
                 // Recursive merge for nested structures like 'vectors'
                 if (isset($data['vectors']) && is_array($data['vectors'])) {
                     $data['vectors'] = array_merge($defaultConfig['vectors'], $data['vectors']);
@@ -801,7 +805,12 @@ class SiteHoneypot
         // 1. Dynamic Blocklist Feed
         if (strpos($path, '/honeypot-feed.txt') !== false) {
             if (!empty($config['feed_enabled'])) {
-                self::serveBlocklistFeed($_GET['token'] ?? '');
+                $token = $_GET['token'] ?? '';
+                if (empty($token) && !empty($_SERVER['REQUEST_URI'])) {
+                    parse_str((string)parse_url($_SERVER['REQUEST_URI'], PHP_URL_QUERY), $qp);
+                    $token = $qp['token'] ?? '';
+                }
+                self::serveBlocklistFeed($token);
                 return true;
             }
             return false;
