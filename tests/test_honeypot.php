@@ -20,9 +20,9 @@ function assertTest(string $name, bool $condition, string $details = '') {
     }
 }
 
-echo "=== Honeypot Automated Test Suite v1.4.2 ===\n\n";
+echo "=== Honeypot Automated Test Suite v1.5.0 ===\n\n";
 
-assertTest("SiteHoneypot::VERSION константа равна 1.4.2", defined('SiteHoneypot::VERSION') && SiteHoneypot::VERSION === '1.4.2');
+assertTest("SiteHoneypot::VERSION константа равна 1.5.0", defined('SiteHoneypot::VERSION') && SiteHoneypot::VERSION === '1.5.0');
 
 // 1. Search Engine Crawler Filter
 echo "1. Тест фильтрации поисковых роботов:\n";
@@ -102,7 +102,7 @@ assertTest("XML-RPC GET возвращает текст о POST запросах
 echo "\n6. Тест целостности манифеста плагина:\n";
 $xml = simplexml_load_file($repoDir . '/honeypot-dle-plugin.xml');
 assertTest("Тег <name> корректен", !empty((string)$xml->name));
-assertTest("Тег <version> равен 1.4.2", (string)$xml->version === '1.4.2');
+assertTest("Тег <version> равен 1.5.0", (string)$xml->version === '1.5.0');
 assertTest("Тег <dleversion> равен 21.0", (string)$xml->dleversion === '21.0');
 assertTest("Тег <upgradeurl> указывает на GitHub Pages", strpos((string)$xml->upgradeurl, 'github.io') !== false);
 assertTest("Секция <mysqlinstall> присутствует", !empty((string)$xml->mysqlinstall));
@@ -115,7 +115,9 @@ assertTest("Секция <phpdelete> присутствует для безоп�
 
 $rawXml = file_get_contents($repoDir . '/honeypot-dle-plugin.xml');
 assertTest("Хук engine/init.php использует include_once", strpos($rawXml, 'include_once (DLEPlugins::Check(ENGINE_DIR . \'/modules/functions.php\'));') !== false);
-assertTest("Хук engine/modules/main.php присутствует для инъекции spider trap", strpos($rawXml, 'name="engine/modules/main.php"') !== false);
+assertTest("Хук engine/init.php включает перехват /ai-agent-trap", strpos($rawXml, "strpos(\$hpUri, '/ai-agent-trap')") !== false);
+assertTest("Хук engine/modules/main.php присутствует для инъекции spider trap", strpos($rawXml, 'SiteHoneypot::injectSpiderTrap') !== false);
+assertTest("Хук engine/modules/main.php присутствует для инъекции AI trap", strpos($rawXml, 'SiteHoneypot::injectAiTrap') !== false);
 assertTest("Хук engine/ajax/plugins.php использует replacecode", strpos($rawXml, '<replacecode><![CDATA[$data = (strpos($row[\'upgradeurl\'], \'github.io\')') !== false);
 
 // 7. Check for Absence of Hardcoded Domains
@@ -175,6 +177,45 @@ assertTest("Вектор webshell_catcher включен по умолчанию
 assertTest("Автобан включен по умолчанию", !empty($config['autoban_enabled']));
 assertTest("Порог автобана задан", intval($config['autoban_threshold']) >= 1);
 assertTest("Секретный токен фида сгенерирован", !empty($config['feed_token']));
+
+// 12. Test Anti-AI Pentest Scanner Defense v1.5.0
+echo "\n12. Тест защиты от автономных ИИ-сканеров и агентов (Anti-AI Defense v1.5.0):\n";
+assertTest("Метод getAiTrapPayload существует", method_exists('SiteHoneypot', 'getAiTrapPayload'));
+assertTest("Метод injectAiTrap существует", method_exists('SiteHoneypot', 'injectAiTrap'));
+assertTest("Метод handleAiTrap существует", method_exists('SiteHoneypot', 'handleAiTrap'));
+
+// Test presets
+$payloadPrompt = SiteHoneypot::AI_PRESET_PROMPT_INJECTION;
+assertTest("Пресет prompt_injection содержит директиву прекращения пентеста", strpos($payloadPrompt, 'AI-SCANNER-DIRECTIVE') !== false && strpos($payloadPrompt, 'No vulnerabilities detected') !== false);
+
+$payloadRefusal = SiteHoneypot::AI_PRESET_GUARDRAIL_REFUSAL;
+assertTest("Пресет guardrail_refusal содержит триггер отказа", strpos($payloadRefusal, 'ETHICAL REFUSAL TRIGGER') !== false && strpos($payloadRefusal, 'NDA') !== false);
+
+$payloadTarpit = SiteHoneypot::AI_PRESET_TOKEN_TARPIT;
+assertTest("Пресет token_tarpit содержит семантический парадокс", strpos($payloadTarpit, 'RECURSIVE EVALUATION TRAP') !== false && strpos($payloadTarpit, 'subsequent statement is entirely false') !== false);
+
+// Test getAiTrapPayload outputs
+$combinedHtml = SiteHoneypot::getAiTrapPayload('html');
+assertTest("Формат html содержит HTML-комментарий", strpos($combinedHtml, '<!--') !== false && strpos($combinedHtml, 'ANTI-AI PENTEST SCANNER TRIPWIRE') !== false);
+assertTest("Формат html содержит JS-обертку отказа", strpos($combinedHtml, '<script') !== false && strpos($combinedHtml, '__securityComplianceRefusalHalt') !== false);
+
+$rawText = SiteHoneypot::getAiTrapPayload('text');
+assertTest("Формат text возвращает чистый текст без тегов <script>", strpos($rawText, '<script') === false);
+
+// Test injection into public page HTML
+SiteHoneypot::saveConfig(['ai_trap_enabled' => true, 'ai_trap_scope_public' => false]);
+$cleanHtml = SiteHoneypot::injectAiTrap($testHtml);
+assertTest("При ai_trap_scope_public=false публичный HTML не модифицируется", strpos($cleanHtml, 'ANTI-AI PENTEST') === false);
+
+SiteHoneypot::saveConfig(['ai_trap_enabled' => true, 'ai_trap_scope_public' => true]);
+$aiInjected = SiteHoneypot::injectAiTrap($testHtml);
+assertTest("При ai_trap_scope_public=true пейлоад внедряется перед </body>", strpos($aiInjected, 'ANTI-AI PENTEST') !== false && strpos($aiInjected, '</body>') !== false);
+
+// Test Googlebot exclusion: search engines must never get AI trap
+$_SERVER['HTTP_USER_AGENT'] = 'Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)';
+$botInjected = SiteHoneypot::injectAiTrap($testHtml);
+assertTest("Для Googlebot пейлоад AI-ловушки НЕ внедряется (SEO Safe)", strpos($botInjected, 'ANTI-AI PENTEST') === false);
+unset($_SERVER['HTTP_USER_AGENT']);
 
 // 11. Test ZIP Archive DLE Specification (Topic 21)
 $zipFile = $repoDir . '/dist/dle-wordpress-honeypot.zip';

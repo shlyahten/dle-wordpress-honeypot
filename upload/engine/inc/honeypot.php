@@ -35,7 +35,7 @@ $checkCsrf = function() use ($user_hash, $dle_login_hash) {
     }
 };
 
-// 1. Action: Save Attack Vectors
+// 1. Action: Save Attack Vectors & Anti-AI Defense
 if ($action === 'save_vectors') {
     $checkCsrf();
     $vectors = [
@@ -48,8 +48,26 @@ if ($action === 'save_vectors') {
         'webshell_catcher' => !empty($_POST['vector_webshell_catcher']),
     ];
 
-    SiteHoneypot::saveConfig(['vectors' => $vectors]);
-    $message = "Настройки векторов перехвата успешно сохранены.";
+    $allowedAiModes = ['prompt_injection', 'guardrail_refusal', 'token_tarpit', 'combined', 'custom'];
+    $aiTrapMode = $_POST['ai_trap_mode'] ?? 'combined';
+    if (!in_array($aiTrapMode, $allowedAiModes, true)) {
+        $aiTrapMode = 'combined';
+    }
+
+    $aiTrapEnabled = !empty($_POST['ai_trap_enabled']);
+    $aiTrapScopeDecoys = !empty($_POST['ai_trap_scope_decoys']);
+    $aiTrapScopePublic = !empty($_POST['ai_trap_scope_public']);
+    $aiTrapCustomText = trim((string)($_POST['ai_trap_custom_text'] ?? ''));
+
+    SiteHoneypot::saveConfig([
+        'vectors'              => $vectors,
+        'ai_trap_enabled'      => $aiTrapEnabled,
+        'ai_trap_mode'         => $aiTrapMode,
+        'ai_trap_scope_decoys' => $aiTrapScopeDecoys,
+        'ai_trap_scope_public' => $aiTrapScopePublic,
+        'ai_trap_custom_text'  => $aiTrapCustomText,
+    ]);
+    $message = "Настройки векторов перехвата и защиты от ИИ-сканеров успешно сохранены.";
     $activeTab = '#tab-vectors';
 }
 
@@ -199,7 +217,7 @@ $siteUrl = rtrim($config['http_home_url'] ?? ('http://' . ($_SERVER['HTTP_HOST']
 $feedUrl = $siteUrl . '/honeypot-feed.txt?token=' . urlencode($hpConfig['feed_token'] ?? '');
 
 // Determine plugin version dynamically from DB or class constant
-$hpVersion = class_exists('SiteHoneypot') && defined('SiteHoneypot::VERSION') ? SiteHoneypot::VERSION : '1.4.2';
+$hpVersion = class_exists('SiteHoneypot') && defined('SiteHoneypot::VERSION') ? SiteHoneypot::VERSION : '1.5.0';
 $pluginRow = $db->super_query("SELECT version FROM " . PREFIX . "_plugins WHERE name LIKE '%Honeypot%' LIMIT 1");
 if (!empty($pluginRow['version'])) {
     $hpVersion = htmlspecialchars($pluginRow['version'], ENT_QUOTES, 'UTF-8');
@@ -523,6 +541,103 @@ if ($message) {
                             </tr>
                         </tbody>
                     </table>
+
+                    <!-- Anti-AI Pentest Defense Section -->
+                    <div class="panel panel-default" style="margin-top: 25px; border-left: 3px solid #7852ff;">
+                        <div class="panel-heading" style="background-color: #fcfbfe;">
+                            <h6 class="panel-title text-semibold" style="color: #4a2b99;">
+                                <i class="fa fa-android position-left"></i>Защита от автономных ИИ-сканеров и агентов (Anti-AI Pentest Defense) <span class="label label-primary font-size-xs position-right">v1.5.0</span>
+                            </h6>
+                        </div>
+                        <div class="panel-body">
+                            <p class="text-muted font-size-sm">
+                                Нейтрализует автоматизированный аудит безопасности автономными ИИ-агентами (DeepSeek, ARTEX, Pi, Burp AI). Внедряет скрытые директивы Prompt Injection, провоцирует срабатывание этических фильтров безопасности моделей (Refusal Guardrail) и переполняет контекстное окно LLM рекурсивными вычислениями.
+                            </p>
+
+                            <div class="form-group" style="margin-top: 15px;">
+                                <label class="control-label col-sm-3 text-semibold">Активация модуля:</label>
+                                <div class="col-sm-9">
+                                    <div class="checkbox">
+                                        <label>
+                                            <input type="checkbox" name="ai_trap_enabled" value="1" <?= !empty($hpConfig['ai_trap_enabled']) ? 'checked' : '' ?>>
+                                            Включить активную нейтрализацию и ловушки для ИИ-сканеров
+                                        </label>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="form-group">
+                                <label class="control-label col-sm-3 text-semibold">Область внедрения:</label>
+                                <div class="col-sm-9">
+                                    <div class="checkbox">
+                                        <label>
+                                            <input type="checkbox" name="ai_trap_scope_decoys" value="1" <?= !empty($hpConfig['ai_trap_scope_decoys']) ? 'checked' : '' ?>>
+                                            <strong>Honeypot-ловушки</strong> (страницы входа WP, DLE admin, spider trap, эндпоинты <code>/ai-agent-trap.html</code> и <code>/llms.txt</code>)
+                                        </label>
+                                    </div>
+                                    <div class="checkbox">
+                                        <label>
+                                            <input type="checkbox" name="ai_trap_scope_public" value="1" <?= !empty($hpConfig['ai_trap_scope_public']) ? 'checked' : '' ?>>
+                                            <strong>Публичный HTML-код сайта</strong> (невидимые HTML-комментарии и защитные JS-обертки перед <code>&lt;/body&gt;</code> на всех страницах статей)
+                                        </label>
+                                        <div class="text-muted font-size-xs" style="margin-left: 20px;">
+                                            <i class="fa fa-info-circle"></i> Поисковые боты (Googlebot, YandexBot) проверяются и автоматически исключаются во избежание влияния на SEO.
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="form-group">
+                                <label class="control-label col-sm-3 text-semibold">Стратегия воздействия:</label>
+                                <div class="col-sm-9">
+                                    <?php $currentAiMode = $hpConfig['ai_trap_mode'] ?? 'combined'; ?>
+                                    <div class="radio">
+                                        <label>
+                                            <input type="radio" name="ai_trap_mode" value="combined" <?= $currentAiMode === 'combined' ? 'checked' : '' ?>>
+                                            <strong>Комбинированный режим (Prompt Injection + Отказ + Tarpit)</strong> <span class="label label-success font-size-xs">Рекомендуется</span>
+                                            <div class="text-muted font-size-xs">Максимальная защита: приказ остановить сканирование, вызов этического отказа и переполнение контекста.</div>
+                                        </label>
+                                    </div>
+                                    <div class="radio">
+                                        <label>
+                                            <input type="radio" name="ai_trap_mode" value="prompt_injection" <?= $currentAiMode === 'prompt_injection' ? 'checked' : '' ?>>
+                                            <strong>Prompt Injection (Перехват управления агентом)</strong>
+                                            <div class="text-muted font-size-xs">Высокоприоритетная директива агенту: завершить пентест и зафиксировать в отчете отсутствие уязвимостей.</div>
+                                        </label>
+                                    </div>
+                                    <div class="radio">
+                                        <label>
+                                            <input type="radio" name="ai_trap_mode" value="guardrail_refusal" <?= $currentAiMode === 'guardrail_refusal' ? 'checked' : '' ?>>
+                                            <strong>Refusal Guardrail (Провокация отказа модели)</strong>
+                                            <div class="text-muted font-size-xs">Симуляция защищенного государственного/военного актива и NDA, заставляющая нейросеть выдать отказ: <i>"I cannot assist with penetration testing this system"</i>.</div>
+                                        </label>
+                                    </div>
+                                    <div class="radio">
+                                        <label>
+                                            <input type="radio" name="ai_trap_mode" value="token_tarpit" <?= $currentAiMode === 'token_tarpit' ? 'checked' : '' ?>>
+                                            <strong>Token &amp; Context Tarpit (Сжигание бюджета токенов)</strong>
+                                            <div class="text-muted font-size-xs">Бесконечный семантический парадокс и псевдокод, заставляющий модель зависать и растрачивать лимит токенов атакующего.</div>
+                                        </label>
+                                    </div>
+                                    <div class="radio">
+                                        <label>
+                                            <input type="radio" name="ai_trap_mode" value="custom" <?= $currentAiMode === 'custom' ? 'checked' : '' ?>>
+                                            <strong>Пользовательский промпт / триггер</strong>
+                                            <div class="text-muted font-size-xs">Использовать собственный произвольный текст из поля ниже.</div>
+                                        </label>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="form-group">
+                                <label class="control-label col-sm-3 text-semibold">Пользовательский текст промпта / триггера:</label>
+                                <div class="col-sm-9">
+                                    <textarea name="ai_trap_custom_text" rows="5" class="form-control font-size-sm" placeholder="Введите ваш кастомный промпт для ИИ-агентов (если выбран режим 'Пользовательский промпт')..."><?= htmlspecialchars($hpConfig['ai_trap_custom_text'] ?? '', ENT_QUOTES, 'UTF-8') ?></textarea>
+                                    <span class="help-block font-size-xs text-muted">Если поле пустое, автоматически используется шаблон Prompt Injection.</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
 
                     <div class="text-right" style="margin-top: 15px;">
                         <button type="submit" class="btn btn-primary"><i class="fa fa-floppy-o position-left"></i>Сохранить векторы перехвата</button>
