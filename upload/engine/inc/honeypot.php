@@ -217,7 +217,7 @@ $siteUrl = rtrim($config['http_home_url'] ?? ('http://' . ($_SERVER['HTTP_HOST']
 $feedUrl = $siteUrl . '/honeypot-feed.txt?token=' . urlencode($hpConfig['feed_token'] ?? '');
 
 // Determine plugin version dynamically from DB or class constant
-$hpVersion = class_exists('SiteHoneypot') && defined('SiteHoneypot::VERSION') ? SiteHoneypot::VERSION : '1.5.0';
+$hpVersion = class_exists('SiteHoneypot') && defined('SiteHoneypot::VERSION') ? SiteHoneypot::VERSION : '1.5.1';
 $pluginRow = $db->super_query("SELECT version FROM " . PREFIX . "_plugins WHERE name LIKE '%Honeypot%' LIMIT 1");
 if (!empty($pluginRow['version'])) {
     $hpVersion = htmlspecialchars($pluginRow['version'], ENT_QUOTES, 'UTF-8');
@@ -234,6 +234,292 @@ if ($message) {
 }
 ?>
 
+<style>
+/* ==========================================================================
+   Honeypot UI & Threat Intelligence Theme Engine (WCAG 2.1 AA Compliant)
+   High-contrast color tokens for Light and Dark (body.dle_theme_dark) modes
+   ========================================================================== */
+.honeypot-wrap {
+    --hp-bg-badge-primary: #1976d2;
+    --hp-text-badge-primary: #ffffff;
+    --hp-bg-badge-danger: #d32f2f;
+    --hp-text-badge-danger: #ffffff;
+
+    --hp-status-banned-bg: #fee2e2;
+    --hp-status-banned-color: #991b1b;
+    --hp-status-banned-border: #fca5a5;
+
+    --hp-status-unbanned-bg: #f1f5f9;
+    --hp-status-unbanned-color: #334155;
+    --hp-status-unbanned-border: #cbd5e1;
+
+    --hp-status-active-bg: #dcfce7;
+    --hp-status-active-color: #166534;
+    --hp-status-active-border: #86efac;
+
+    --hp-btn-default-bg: #ffffff;
+    --hp-btn-default-color: #1e293b;
+    --hp-btn-default-border: #cbd5e1;
+    --hp-btn-default-hover-bg: #f8fafc;
+    --hp-btn-default-hover-color: #0f172a;
+
+    --hp-btn-danger-bg: #dc2626;
+    --hp-btn-danger-color: #ffffff;
+    --hp-btn-danger-border: #b91c1c;
+
+    --hp-pill-blue-bg: #eff6ff;
+    --hp-pill-blue-color: #1d4ed8;
+    --hp-pill-blue-border: #bfdbfe;
+
+    --hp-pill-gray-bg: #f8fafc;
+    --hp-pill-gray-color: #475569;
+    --hp-pill-gray-border: #cbd5e1;
+
+    --hp-pill-amber-bg: #fffbeb;
+    --hp-pill-amber-color: #b45309;
+    --hp-pill-amber-border: #fde68a;
+
+    --hp-pill-teal-bg: #f0fdf4;
+    --hp-pill-teal-color: #047857;
+    --hp-pill-teal-border: #a7f3d0;
+
+    --hp-pill-rose-bg: #fff1f2;
+    --hp-pill-rose-color: #be123c;
+    --hp-pill-rose-border: #fecdd3;
+
+    --hp-pill-purple-bg: #faf5ff;
+    --hp-pill-purple-color: #6b21a8;
+    --hp-pill-purple-border: #e9d5ff;
+
+    --hp-ai-panel-header-bg: #f5f3ff;
+    --hp-ai-panel-header-color: #4c1d95;
+    --hp-ai-panel-border: #8b5cf6;
+
+    --hp-code-bg: #f1f5f9;
+    --hp-code-color: #0f172a;
+    --hp-code-border: #e2e8f0;
+
+    --hp-metric-sanction-color: #334155;
+}
+
+body.dle_theme_dark .honeypot-wrap {
+    --hp-bg-badge-primary: #2563eb;
+    --hp-text-badge-primary: #ffffff;
+    --hp-bg-badge-danger: #ef4444;
+    --hp-text-badge-danger: #ffffff;
+
+    --hp-status-banned-bg: #451a1a;
+    --hp-status-banned-color: #fca5a5;
+    --hp-status-banned-border: #7f1d1d;
+
+    --hp-status-unbanned-bg: #1e293b;
+    --hp-status-unbanned-color: #cbd5e1;
+    --hp-status-unbanned-border: #475569;
+
+    --hp-status-active-bg: #14532d;
+    --hp-status-active-color: #86efac;
+    --hp-status-active-border: #22c55e;
+
+    --hp-btn-default-bg: #273346;
+    --hp-btn-default-color: #f8fafc;
+    --hp-btn-default-border: #475569;
+    --hp-btn-default-hover-bg: #334155;
+    --hp-btn-default-hover-color: #ffffff;
+
+    --hp-btn-danger-bg: #ef4444;
+    --hp-btn-danger-color: #ffffff;
+    --hp-btn-danger-border: #dc2626;
+
+    --hp-pill-blue-bg: #172554;
+    --hp-pill-blue-color: #93c5fd;
+    --hp-pill-blue-border: #1e40af;
+
+    --hp-pill-gray-bg: #1e293b;
+    --hp-pill-gray-color: #cbd5e1;
+    --hp-pill-gray-border: #475569;
+
+    --hp-pill-amber-bg: #451a03;
+    --hp-pill-amber-color: #fcd34d;
+    --hp-pill-amber-border: #78350f;
+
+    --hp-pill-teal-bg: #022c22;
+    --hp-pill-teal-color: #6ee7b7;
+    --hp-pill-teal-border: #065f46;
+
+    --hp-pill-rose-bg: #4c0519;
+    --hp-pill-rose-color: #fda4af;
+    --hp-pill-rose-border: #9f1239;
+
+    --hp-pill-purple-bg: #3b0764;
+    --hp-pill-purple-color: #d8b4fe;
+    --hp-pill-purple-border: #581c87;
+
+    --hp-ai-panel-header-bg: #2e1065;
+    --hp-ai-panel-header-color: #e9d5ff;
+    --hp-ai-panel-border: #8b5cf6;
+
+    --hp-code-bg: #1e293b;
+    --hp-code-color: #38bdf8;
+    --hp-code-border: #334155;
+
+    --hp-metric-sanction-color: #e2e8f0;
+}
+
+/* Base Badge */
+.honeypot-wrap .hp-badge {
+    display: inline-block;
+    min-width: 24px;
+    padding: 3px 8px;
+    font-size: 12px;
+    font-weight: 700;
+    line-height: 1.1;
+    text-align: center;
+    white-space: nowrap;
+    border-radius: 12px;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.08);
+}
+.honeypot-wrap .hp-badge-count {
+    background-color: var(--hp-bg-badge-primary) !important;
+    color: var(--hp-text-badge-primary) !important;
+    border: 1px solid transparent;
+}
+.honeypot-wrap .hp-badge-danger {
+    background-color: var(--hp-bg-badge-danger) !important;
+    color: var(--hp-text-badge-danger) !important;
+    border: 1px solid transparent;
+}
+
+/* Status Labels */
+.honeypot-wrap .hp-status {
+    display: inline-block;
+    padding: 3px 9px;
+    font-size: 11px;
+    font-weight: 700;
+    line-height: 1.3;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    border-radius: 4px;
+    border-width: 1px;
+    border-style: solid;
+}
+.honeypot-wrap .hp-status-banned {
+    background-color: var(--hp-status-banned-bg) !important;
+    color: var(--hp-status-banned-color) !important;
+    border-color: var(--hp-status-banned-border) !important;
+}
+.honeypot-wrap .hp-status-unbanned {
+    background-color: var(--hp-status-unbanned-bg) !important;
+    color: var(--hp-status-unbanned-color) !important;
+    border-color: var(--hp-status-unbanned-border) !important;
+}
+.honeypot-wrap .hp-status-active {
+    background-color: var(--hp-status-active-bg) !important;
+    color: var(--hp-status-active-color) !important;
+    border-color: var(--hp-status-active-border) !important;
+}
+
+/* Category Pills */
+.honeypot-wrap .hp-pill {
+    display: inline-block;
+    padding: 2px 8px;
+    font-size: 11px;
+    font-weight: 600;
+    border-radius: 4px;
+    border-width: 1px;
+    border-style: solid;
+    line-height: 1.3;
+}
+.honeypot-wrap .hp-pill-blue { background: var(--hp-pill-blue-bg) !important; color: var(--hp-pill-blue-color) !important; border-color: var(--hp-pill-blue-border) !important; }
+.honeypot-wrap .hp-pill-gray { background: var(--hp-pill-gray-bg) !important; color: var(--hp-pill-gray-color) !important; border-color: var(--hp-pill-gray-border) !important; }
+.honeypot-wrap .hp-pill-amber { background: var(--hp-pill-amber-bg) !important; color: var(--hp-pill-amber-color) !important; border-color: var(--hp-pill-amber-border) !important; }
+.honeypot-wrap .hp-pill-teal { background: var(--hp-pill-teal-bg) !important; color: var(--hp-pill-teal-color) !important; border-color: var(--hp-pill-teal-border) !important; }
+.honeypot-wrap .hp-pill-rose { background: var(--hp-pill-rose-bg) !important; color: var(--hp-pill-rose-color) !important; border-color: var(--hp-pill-rose-border) !important; }
+.honeypot-wrap .hp-pill-purple { background: var(--hp-pill-purple-bg) !important; color: var(--hp-pill-purple-color) !important; border-color: var(--hp-pill-purple-border) !important; }
+
+/* Buttons */
+.honeypot-wrap .hp-btn-default {
+    background-color: var(--hp-btn-default-bg) !important;
+    color: var(--hp-btn-default-color) !important;
+    border: 1px solid var(--hp-btn-default-border) !important;
+    font-weight: 600;
+    text-shadow: none !important;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.06);
+    transition: all 0.15s ease-in-out;
+}
+.honeypot-wrap .hp-btn-default:hover,
+.honeypot-wrap .hp-btn-default:focus {
+    background-color: var(--hp-btn-default-hover-bg) !important;
+    color: var(--hp-btn-default-hover-color) !important;
+    border-color: var(--hp-btn-default-border) !important;
+}
+
+.honeypot-wrap .hp-btn-danger {
+    background-color: var(--hp-btn-danger-bg) !important;
+    color: var(--hp-btn-danger-color) !important;
+    border: 1px solid var(--hp-btn-danger-border) !important;
+    font-weight: 600;
+    text-shadow: none !important;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.1);
+}
+.honeypot-wrap .hp-btn-danger:hover,
+.honeypot-wrap .hp-btn-danger:focus {
+    background-color: #b91c1c !important;
+    color: #ffffff !important;
+    border-color: #991b1b !important;
+}
+
+/* Global button fallback overrides inside .honeypot-wrap */
+.honeypot-wrap .btn-default {
+    background-color: var(--hp-btn-default-bg) !important;
+    color: var(--hp-btn-default-color) !important;
+    border-color: var(--hp-btn-default-border) !important;
+    text-shadow: none !important;
+}
+.honeypot-wrap .btn-default:hover,
+.honeypot-wrap .btn-default:focus {
+    background-color: var(--hp-btn-default-hover-bg) !important;
+    color: var(--hp-btn-default-hover-color) !important;
+}
+body.dle_theme_dark .honeypot-wrap .btn-default {
+    background-color: var(--hp-btn-default-bg) !important;
+    color: var(--hp-btn-default-color) !important;
+    border-color: var(--hp-btn-default-border) !important;
+}
+
+/* Code */
+.honeypot-wrap code {
+    background-color: var(--hp-code-bg) !important;
+    color: var(--hp-code-color) !important;
+    border: 1px solid var(--hp-code-border) !important;
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-size: 12px;
+}
+
+/* Anti-AI Panel */
+.honeypot-wrap .hp-ai-panel {
+    border-left: 3px solid var(--hp-ai-panel-border) !important;
+}
+.honeypot-wrap .hp-ai-heading {
+    background-color: var(--hp-ai-panel-header-bg) !important;
+    border-bottom: 1px solid var(--hp-ai-panel-border) !important;
+}
+.honeypot-wrap .hp-ai-heading .panel-title {
+    color: var(--hp-ai-panel-header-color) !important;
+}
+
+/* Metric Sanction */
+.honeypot-wrap .hp-metric-sanction {
+    color: var(--hp-metric-sanction-color) !important;
+}
+
+/* Table Vertically Centered Cells */
+.honeypot-wrap .table > tbody > tr > td {
+    vertical-align: middle;
+}
+</style>
+
+<div class="honeypot-wrap">
 <div class="panel panel-default">
     <div class="panel-heading">
         <ul class="nav nav-tabs nav-tabs-highlight" role="tablist">
@@ -280,7 +566,7 @@ if ($message) {
                         <div class="panel panel-default border-top-warning">
                             <div class="panel-heading"><h6 class="panel-title text-uppercase font-size-xs text-muted">Активная санкция</h6></div>
                             <div class="panel-body text-center">
-                                <h4 class="no-margin text-semibold text-uppercase text-slate">
+                                <h4 class="no-margin text-semibold text-uppercase hp-metric-sanction">
                                     <?php
                                     $modeLabels = [
                                         'hybrid'    => 'Гибридный',
@@ -335,12 +621,12 @@ if ($message) {
                                                         <strong><?= htmlspecialchars($ip, ENT_QUOTES, 'UTF-8') ?></strong>
                                                         <a href="https://whois.domaintools.com/<?= urlencode($ip) ?>" target="_blank" class="text-muted ml-5 font-size-xs" title="Whois lookup"><i class="fa fa-external-link"></i></a>
                                                     </td>
-                                                    <td class="text-center"><span class="badge badge-primary"><?= $count ?></span></td>
+                                                    <td class="text-center"><span class="hp-badge hp-badge-count"><?= $count ?></span></td>
                                                     <td class="text-center">
                                                         <?php if ($isBanned): ?>
-                                                            <span class="label label-danger">Заблокирован</span>
+                                                            <span class="hp-status hp-status-banned"><i class="fa fa-lock position-left"></i>Заблокирован</span>
                                                         <?php else: ?>
-                                                            <span class="label label-default">Не заблокирован</span>
+                                                            <span class="hp-status hp-status-unbanned"><i class="fa fa-circle-o position-left"></i>Не заблокирован</span>
                                                         <?php endif; ?>
                                                     </td>
                                                     <td class="text-right">
@@ -348,13 +634,13 @@ if ($message) {
                                                             <form action="?mod=honeypot&action=unblock_ip" method="post" style="display:inline-block;">
                                                                 <input type="hidden" name="user_hash" value="<?= $dle_login_hash ?>">
                                                                 <input type="hidden" name="ip" value="<?= htmlspecialchars($ip, ENT_QUOTES, 'UTF-8') ?>">
-                                                                <button type="submit" class="btn btn-xs btn-default"><i class="fa fa-unlock position-left"></i>Разбанить</button>
+                                                                <button type="submit" class="btn btn-xs hp-btn-default"><i class="fa fa-unlock position-left"></i>Разбанить</button>
                                                             </form>
                                                         <?php else: ?>
                                                             <form action="?mod=honeypot&action=block_ip" method="post" style="display:inline-block;">
                                                                 <input type="hidden" name="user_hash" value="<?= $dle_login_hash ?>">
                                                                 <input type="hidden" name="ip" value="<?= htmlspecialchars($ip, ENT_QUOTES, 'UTF-8') ?>">
-                                                                <button type="submit" class="btn btn-xs btn-danger"><i class="fa fa-ban position-left"></i>В бан DLE</button>
+                                                                <button type="submit" class="btn btn-xs hp-btn-danger"><i class="fa fa-ban position-left"></i>В бан DLE</button>
                                                             </form>
                                                         <?php endif; ?>
                                                     </td>
@@ -388,7 +674,7 @@ if ($message) {
                                             <?php foreach ($stats['top_passwords'] as $pass => $count): ?>
                                                 <tr>
                                                     <td><code><?= htmlspecialchars($pass, ENT_QUOTES, 'UTF-8') ?></code></td>
-                                                    <td class="text-right"><span class="badge badge-danger"><?= $count ?></span></td>
+                                                    <td class="text-right"><span class="hp-badge hp-badge-danger"><?= $count ?></span></td>
                                                 </tr>
                                             <?php endforeach; ?>
                                         </tbody>
@@ -398,7 +684,7 @@ if ($message) {
                                 <div class="text-right" style="margin-top: 15px;">
                                     <form action="?mod=honeypot&action=clear_log" method="post" onsubmit="return confirm('Вы уверены, что хотите очистить журнал атак?');" style="display:inline-block;">
                                         <input type="hidden" name="user_hash" value="<?= $dle_login_hash ?>">
-                                        <button type="submit" class="btn btn-default btn-sm text-danger"><i class="fa fa-trash position-left"></i>Очистить журнал атак</button>
+                                        <button type="submit" class="btn btn-sm hp-btn-default text-danger"><i class="fa fa-trash position-left"></i>Очистить журнал атак</button>
                                     </form>
                                 </div>
                             </div>
@@ -432,10 +718,10 @@ if ($message) {
                                         <tr>
                                             <td class="text-nowrap"><?= htmlspecialchars($attack['date'], ENT_QUOTES, 'UTF-8') ?></td>
                                             <td class="text-nowrap"><strong><?= htmlspecialchars($attack['ip'], ENT_QUOTES, 'UTF-8') ?></strong></td>
-                                            <td class="text-nowrap"><span class="label label-default"><?= htmlspecialchars($attack['method'], ENT_QUOTES, 'UTF-8') ?></span> <code><?= htmlspecialchars($attack['uri'], ENT_QUOTES, 'UTF-8') ?></code></td>
+                                            <td class="text-nowrap"><span class="hp-pill hp-pill-gray"><?= htmlspecialchars($attack['method'], ENT_QUOTES, 'UTF-8') ?></span> <code><?= htmlspecialchars($attack['uri'], ENT_QUOTES, 'UTF-8') ?></code></td>
                                             <td><?= $attack['login'] !== '-' ? '<b>' . htmlspecialchars($attack['login'], ENT_QUOTES, 'UTF-8') . '</b>' : '<span class="text-muted">-</span>' ?></td>
                                             <td><?= $attack['pass'] !== '-' ? '<code class="text-danger">' . htmlspecialchars($attack['pass'], ENT_QUOTES, 'UTF-8') . '</code>' : '<span class="text-muted">-</span>' ?></td>
-                                            <td><span class="label label-info"><?= htmlspecialchars($attack['action'], ENT_QUOTES, 'UTF-8') ?></span></td>
+                                            <td><span class="hp-pill hp-pill-blue"><?= htmlspecialchars($attack['action'], ENT_QUOTES, 'UTF-8') ?></span></td>
                                             <td class="text-muted" style="max-width: 250px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="<?= htmlspecialchars($attack['ua'], ENT_QUOTES, 'UTF-8') ?>">
                                                 <?= htmlspecialchars($attack['ua'], ENT_QUOTES, 'UTF-8') ?>
                                             </td>
@@ -475,7 +761,7 @@ if ($message) {
                                 <td class="text-center">
                                     <input type="checkbox" name="vector_wp_login" value="1" <?= !empty($vectors['wp_login']) ? 'checked' : '' ?>>
                                 </td>
-                                <td><strong>WordPress Login</strong><br><span class="label label-primary font-size-xs">CMS Mimicry</span></td>
+                                <td><strong>WordPress Login</strong><br><span class="hp-pill hp-pill-blue font-size-xs">CMS Mimicry</span></td>
                                 <td><code>/wp-login.php</code></td>
                                 <td class="text-muted font-size-sm">Имитирует официальную страницу авторизации WordPress 6.x. Перехватывает POST-запросы подбора логинов/паролей и применяет санкцию.</td>
                             </tr>
@@ -485,7 +771,7 @@ if ($message) {
                                 <td class="text-center">
                                     <input type="checkbox" name="vector_wp_admin" value="1" <?= !empty($vectors['wp_admin']) ? 'checked' : '' ?>>
                                 </td>
-                                <td><strong>WordPress Admin Directory</strong><br><span class="label label-default font-size-xs">Probe Redirection</span></td>
+                                <td><strong>WordPress Admin Directory</strong><br><span class="hp-pill hp-pill-gray font-size-xs">Probe Redirection</span></td>
                                 <td><code>/wp-admin/</code></td>
                                 <td class="text-muted font-size-sm">Ловит ботов, проверяющих наличие папки панели управления WP, и перенаправляет их в ловушку входа.</td>
                             </tr>
@@ -495,7 +781,7 @@ if ($message) {
                                 <td class="text-center">
                                     <input type="checkbox" name="vector_wp_xmlrpc" value="1" <?= !empty($vectors['wp_xmlrpc']) ? 'checked' : '' ?>>
                                 </td>
-                                <td><strong>WordPress XML-RPC API</strong><br><span class="label label-warning font-size-xs">Bruteforce / Pingback</span></td>
+                                <td><strong>WordPress XML-RPC API</strong><br><span class="hp-pill hp-pill-amber font-size-xs">Bruteforce / Pingback</span></td>
                                 <td><code>/xmlrpc.php</code></td>
                                 <td class="text-muted font-size-sm">Перехватывает атаки через <code>system.multicall</code> и <code>wp.getUsersBlogs</code>, собирает перебираемые пароли и возвращает XML-RPC ошибку или бомбу.</td>
                             </tr>
@@ -505,7 +791,7 @@ if ($message) {
                                 <td class="text-center">
                                     <input type="checkbox" name="vector_wp_rest_users" value="1" <?= !empty($vectors['wp_rest_users']) ? 'checked' : '' ?>>
                                 </td>
-                                <td><strong>WP REST API Enumeration</strong><br><span class="label label-info font-size-xs">Recon Trap</span></td>
+                                <td><strong>WP REST API Enumeration</strong><br><span class="hp-pill hp-pill-teal font-size-xs">Recon Trap</span></td>
                                 <td><code>/wp-json/wp/v2/users</code></td>
                                 <td class="text-muted font-size-sm">Скармливает автоматизированным сканерам (WPScan) фейковый профиль администратора <code>admin</code>, заманивая их в ловушку брутфорса.</td>
                             </tr>
@@ -515,7 +801,7 @@ if ($message) {
                                 <td class="text-center">
                                     <input type="checkbox" name="vector_sensitive_files" value="1" <?= !empty($vectors['sensitive_files']) ? 'checked' : '' ?>>
                                 </td>
-                                <td><strong>Sensitive &amp; Backup Files</strong><br><span class="label label-danger font-size-xs">Canary Token Trap</span></td>
+                                <td><strong>Sensitive &amp; Backup Files</strong><br><span class="hp-pill hp-pill-rose font-size-xs">Canary Token Trap</span></td>
                                 <td><code>/.env</code>, <code>/.git/config</code>, <code>dump.sql</code>, <code>wp-config.php.bak</code></td>
                                 <td class="text-muted font-size-sm">Перехватывает запросы к бэкапам и файлам конфигураций. Возвращает фейковые файлы с canary-токенами, отравляя базы данных атакующего.</td>
                             </tr>
@@ -525,7 +811,7 @@ if ($message) {
                                 <td class="text-center">
                                     <input type="checkbox" name="vector_spider_trap" value="1" <?= !empty($vectors['spider_trap']) ? 'checked' : '' ?>>
                                 </td>
-                                <td><strong>Spider Trap (Паутинная ловушка)</strong><br><span class="label label-primary font-size-xs">Bot Harvester</span></td>
+                                <td><strong>Spider Trap (Паутинная ловушка)</strong><br><span class="hp-pill hp-pill-purple font-size-xs">Bot Harvester</span></td>
                                 <td><code>/trap-spider.html</code> (скрытая ссылка в DOM)</td>
                                 <td class="text-muted font-size-sm">Внедряет в код страниц невидимую для людей ссылку. Любой бот или парсер, перешедший по ней, немедленно идентифицируется как вредоносный.</td>
                             </tr>
@@ -535,7 +821,7 @@ if ($message) {
                                 <td class="text-center">
                                     <input type="checkbox" name="vector_webshell_catcher" value="1" <?= !empty($vectors['webshell_catcher']) ? 'checked' : '' ?>>
                                 </td>
-                                <td><strong>Webshell Catcher &amp; Quarantine</strong><br><span class="label label-danger font-size-xs">Exploit Sandbox</span></td>
+                                <td><strong>Webshell Catcher &amp; Quarantine</strong><br><span class="hp-pill hp-pill-rose font-size-xs">Exploit Sandbox</span></td>
                                 <td><code>/wp-admin/async-upload.php</code></td>
                                 <td class="text-muted font-size-sm">Ловит попытки загрузки PHP-вебшеллов ботами. Безопасно изолирует загруженный файл в защищенный карантин (<code>engine/data/quarantine/</code>, права 0600, исполнение отключено).</td>
                             </tr>
@@ -543,10 +829,10 @@ if ($message) {
                     </table>
 
                     <!-- Anti-AI Pentest Defense Section -->
-                    <div class="panel panel-default" style="margin-top: 25px; border-left: 3px solid #7852ff;">
-                        <div class="panel-heading" style="background-color: #fcfbfe;">
-                            <h6 class="panel-title text-semibold" style="color: #4a2b99;">
-                                <i class="fa fa-android position-left"></i>Защита от автономных ИИ-сканеров и агентов (Anti-AI Pentest Defense) <span class="label label-primary font-size-xs position-right">v1.5.0</span>
+                    <div class="panel panel-default hp-ai-panel" style="margin-top: 25px;">
+                        <div class="panel-heading hp-ai-heading">
+                            <h6 class="panel-title text-semibold">
+                                <i class="fa fa-android position-left"></i>Защита от автономных ИИ-сканеров и агентов (Anti-AI Pentest Defense) <span class="hp-pill hp-pill-purple font-size-xs position-right">v<?= $hpVersion ?></span>
                             </h6>
                         </div>
                         <div class="panel-body">
@@ -594,7 +880,7 @@ if ($message) {
                                     <div class="radio">
                                         <label>
                                             <input type="radio" name="ai_trap_mode" value="combined" <?= $currentAiMode === 'combined' ? 'checked' : '' ?>>
-                                            <strong>Комбинированный режим (Prompt Injection + Отказ + Tarpit)</strong> <span class="label label-success font-size-xs">Рекомендуется</span>
+                                            <strong>Комбинированный режим (Prompt Injection + Отказ + Tarpit)</strong> <span class="hp-pill hp-pill-teal font-size-xs">Рекомендуется</span>
                                             <div class="text-muted font-size-xs">Максимальная защита: приказ остановить сканирование, вызов этического отказа и переполнение контекста.</div>
                                         </label>
                                     </div>
@@ -675,9 +961,9 @@ if ($message) {
                                 <div class="col-sm-6">
                                     <p style="margin-top: 5px;">Текущий статус: 
                                         <?php if ($isTrapActive): ?>
-                                            <span class="label label-success font-size-sm"><i class="fa fa-check position-left"></i>Ловушка активна</span>
+                                            <span class="hp-status hp-status-active font-size-sm"><i class="fa fa-check position-left"></i>Ловушка активна</span>
                                         <?php else: ?>
-                                            <span class="label label-default font-size-sm"><i class="fa fa-power-off position-left"></i>Ловушка выключена</span>
+                                            <span class="hp-status hp-status-unbanned font-size-sm"><i class="fa fa-power-off position-left"></i>Ловушка выключена</span>
                                         <?php endif; ?>
                                     </p>
                                 </div>
@@ -878,7 +1164,7 @@ if ($message) {
                                     <div class="input-group">
                                         <input type="text" name="feed_token" class="form-control" value="<?= htmlspecialchars($hpConfig['feed_token'] ?? '', ENT_QUOTES, 'UTF-8') ?>" required>
                                         <span class="input-group-btn">
-                                            <button type="submit" formaction="?mod=honeypot&action=regen_feed_token" class="btn btn-default" title="Сгенерировать новый ключ"><i class="fa fa-refresh"></i> Новый ключ</button>
+                                            <button type="submit" formaction="?mod=honeypot&action=regen_feed_token" class="btn hp-btn-default" title="Сгенерировать новый ключ"><i class="fa fa-refresh"></i> Новый ключ</button>
                                         </span>
                                     </div>
                                     <span class="help-block font-size-xs text-muted">Защищает фид от публичного сканирования сторонними лицами.</span>
@@ -891,7 +1177,7 @@ if ($message) {
                                     <div class="input-group">
                                         <input type="text" readonly class="form-control" id="feedUrlInput" value="<?= htmlspecialchars($feedUrl, ENT_QUOTES, 'UTF-8') ?>">
                                         <span class="input-group-btn">
-                                            <a href="<?= htmlspecialchars($feedUrl, ENT_QUOTES, 'UTF-8') ?>" target="_blank" class="btn btn-default" title="Открыть в браузере"><i class="fa fa-external-link"></i></a>
+                                            <a href="<?= htmlspecialchars($feedUrl, ENT_QUOTES, 'UTF-8') ?>" target="_blank" class="btn hp-btn-default" title="Открыть в браузере"><i class="fa fa-external-link"></i></a>
                                         </span>
                                     </div>
                                 </div>
@@ -933,6 +1219,7 @@ if ($message) {
 
         </div>
     </div>
+</div>
 </div>
 
 <script>
